@@ -55,14 +55,20 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig):
         det_y_all.append(det_y.detach().cpu())
         tex_y_all.append(tex_y.detach().cpu())
 
+    # return {
+        # "loss": float(np.mean(losses)),
+        # "det_logits": torch.cat(det_logits_all, 0),
+        # "det_y": torch.cat(det_y_all, 0),
+        # "tex_logits": torch.cat(tex_logits_all, 0),
+        # "tex_y": torch.cat(tex_y_all, 0),
+    # }
     return {
         "loss": float(np.mean(losses)),
-        "det_logits": torch.cat(det_logits_all, 0),
-        "det_y": torch.cat(det_y_all, 0),
+        "det_logits": torch.cat([x.reshape(-1, x.shape[-1]) for x in det_logits_all], 0),
+        "det_y": torch.cat([x.reshape(-1) for x in det_y_all], 0),
         "tex_logits": torch.cat(tex_logits_all, 0),
         "tex_y": torch.cat(tex_y_all, 0),
     }
-
 
 def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     opt = AdamW(model.parameters(), lr=cfg.lr)
