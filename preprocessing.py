@@ -51,15 +51,38 @@ def adaptive_silence_removal(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarr
     return sig[keep]
 
 
+# def stft_logmel(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarray:
+#     frame_len = int(cfg.frame_ms * cfg.sr / 1000)
+#     hop = int(frame_len * (1 - cfg.overlap))
+#     window = np.bartlett(frame_len)
+#     _, _, zxx = stft(sig, fs=cfg.sr, window=window, nperseg=frame_len, noverlap=frame_len - hop)
+#     mag = np.abs(zxx) + 1e-8
+#     mel_basis = librosa.filters.mel(sr=cfg.sr, n_fft=frame_len, n_mels=cfg.n_mels, fmin=cfg.min_freq, fmax=cfg.max_freq)
+#     mel = mel_basis @ mag
+#     mel = np.maximum(mel, 1e-8)
+#     return np.log(mel)
+
 def stft_logmel(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarray:
     frame_len = int(cfg.frame_ms * cfg.sr / 1000)
     hop = int(frame_len * (1 - cfg.overlap))
     window = np.bartlett(frame_len)
+
     _, _, zxx = stft(sig, fs=cfg.sr, window=window, nperseg=frame_len, noverlap=frame_len - hop)
-    mag = np.abs(zxx)
-    mel_basis = librosa.filters.mel(sr=cfg.sr, n_fft=frame_len, n_mels=cfg.n_mels, fmin=cfg.min_freq, fmax=cfg.max_freq)
+
+    mag = np.abs(zxx) + 1e-8
+
+    mel_basis = librosa.filters.mel(
+        sr=cfg.sr,
+        n_fft=frame_len,
+        n_mels=cfg.n_mels,
+        fmin=cfg.min_freq,
+        fmax=cfg.max_freq,
+    )
+
     mel = mel_basis @ mag
-    return np.log1p(mel)
+    mel = np.maximum(mel, 1e-8)
+
+    return np.log(mel)
 
 
 def zscore_global(x: np.ndarray, mean: float | None = None, std: float | None = None):
@@ -89,4 +112,6 @@ def preprocess_audio(path: str, cfg: PreprocessConfig) -> Tuple[Dict[str, np.nda
     normed, mean, std = zscore_global(stacked)
     splits = np.array_split(normed, 4, axis=0)
     out = {k: s for k, s in zip(["B1", "B2", "B3", "B4"], splits)}
+    for k in out:
+        out[k] = np.nan_to_num(out[k])
     return out, sig
