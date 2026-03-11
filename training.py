@@ -19,11 +19,11 @@ class TrainConfig:
     epochs: int = 80
     patience: int = 10
     grad_clip: float = 5.0
-    alpha_det: float = 0.6
-    alpha_tex: float = 0.4
+    alpha_det: float = 0.4
+    alpha_tex: float = 0.6
 
 
-def multitask_loss(outputs, det_y, tex_y, det_weight=None, tex_weight=None, alpha_det=0.6, alpha_tex=0.4):
+def multitask_loss(outputs, det_y, tex_y, det_weight=None, tex_weight=None, alpha_det=0.4, alpha_tex=0.6):
     det_ce = nn.CrossEntropyLoss(weight=det_weight)
     tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
     det = det_ce(outputs["det_logits"].reshape(-1, 2), det_y.reshape(-1))
