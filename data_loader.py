@@ -36,7 +36,8 @@ class ChewingDataset(Dataset):
         # feats, sig = preprocess_audio(str(rec.path), self.cfg)
         # t = min(v.shape[1] for v in feats.values())
         # x = np.stack([feats[k][:, :t] for k in ["B1", "B2", "B3", "B4"]], axis=0)
-        feature_path = rec.path.with_suffix(".npy")
+        # feature_path = rec.path.with_suffix(".npy")
+        feature_path = rec.path.parent.parent / "features" / rec.path.parent.name / (rec.path.stem + ".npy")
         x = np.load(feature_path)
         t = x.shape[-1]
         sig = None
@@ -50,7 +51,9 @@ class ChewingDataset(Dataset):
             "rate_y": torch.tensor(rate_target, dtype=torch.float32),
             "subject_id": rec.subject_id if rec.subject_id is not None else -1,
             "file": rec.path.name,
-            "signal": torch.tensor(sig, dtype=torch.float32),
+            # "signal": torch.tensor(sig, dtype=torch.float32),
+            # "signal": torch.tensor(sig, dtype=torch.float32),
+            "signal": None
         }
 
 
