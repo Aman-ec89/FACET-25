@@ -196,7 +196,7 @@ if __name__ == "__main__":
     ap.add_argument("--kaggle_dir", type=str, default="Kaggle audio")
     ap.add_argument("--rate_csv", type=str, default="chewing_rate.csv")
     ap.add_argument("--output_dir", type=str, default="outputs")
-    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument("--batch_size", type=int, default=64)
     ap.add_argument("--epochs", type=int, default=80)
     ap.add_argument("--seed", type=int, default=42)
     run(ap.parse_args())
