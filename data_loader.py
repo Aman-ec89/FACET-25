@@ -100,4 +100,12 @@ def kaggle_pretrain_split(records: Sequence[AudioRecord], seed: int = 42):
 
 def make_loader(records: Sequence[AudioRecord], cfg: PreprocessConfig, batch_size: int, shuffle: bool, rate_csv: str | None = None):
     ds = ChewingDataset(records, cfg, rate_csv=rate_csv)
-    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0, collate_fn=_collate)
+    # return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0, collate_fn=_collate)
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=2,
+        pin_memory=True,
+        collate_fn=_collate
+    )
