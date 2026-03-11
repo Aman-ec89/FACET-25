@@ -110,7 +110,9 @@ class FrequencyAwareMultiTaskNet(nn.Module):
                 if (k == "B1" and self.cfg.remove_b1) or (k == "B3" and self.cfg.remove_b3):
                     continue
                 xb = x[:, i : i + 1, :, :]
-                band_feats.append(self._band_forward(xb, k))
+                # band_feats.append(self._band_forward(xb, k))
+                min_t = min(b.shape[1] for b in band_feats)
+                band_feats = [b[:, :min_t, :] for b in band_feats]
             feats = torch.cat(band_feats, dim=-1)
 
         if self.cfg.temporal == "bilstm":
