@@ -38,9 +38,12 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig):
     tex_logits_all, tex_y_all = [], []
 
     for batch in loader:
-        x = batch["x"].to(device)
-        det_y = batch["det_y"].to(device)
-        tex_y = batch["tex_y"].to(device)
+        # x = batch["x"].to(device)
+        # det_y = batch["det_y"].to(device)
+        # tex_y = batch["tex_y"].to(device)
+        x = batch["x"].to(device, non_blocking=True)
+        det_y = batch["det_y"].to(device, non_blocking=True)
+        tex_y = batch["tex_y"].to(device, non_blocking=True)
         with torch.set_grad_enabled(train):
             out = model(x)
             loss, _ = multitask_loss(out, det_y, tex_y, alpha_det=cfg.alpha_det, alpha_tex=cfg.alpha_tex)
