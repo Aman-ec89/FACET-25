@@ -105,14 +105,29 @@ class FrequencyAwareMultiTaskNet(nn.Module):
             fake = self._band_forward(merged, "B2")
             feats = torch.cat([fake, fake, fake], dim=-1)
         else:
+            # band_feats = []
+            # for i, k in enumerate(["B1", "B2", "B3", "B4"]):
+            #     if (k == "B1" and self.cfg.remove_b1) or (k == "B3" and self.cfg.remove_b3):
+            #         continue
+            #     xb = x[:, i : i + 1, :, :]
+            #     # band_feats.append(self._band_forward(xb, k))
+            #     min_t = min(b.shape[1] for b in band_feats)
+            #     band_feats = [b[:, :min_t, :] for b in band_feats]
+            # feats = torch.cat(band_feats, dim=-1)
             band_feats = []
             for i, k in enumerate(["B1", "B2", "B3", "B4"]):
                 if (k == "B1" and self.cfg.remove_b1) or (k == "B3" and self.cfg.remove_b3):
                     continue
                 xb = x[:, i : i + 1, :, :]
-                # band_feats.append(self._band_forward(xb, k))
-                min_t = min(b.shape[1] for b in band_feats)
-                band_feats = [b[:, :min_t, :] for b in band_feats]
+                band_feats.append(self._band_forward(xb, k))
+
+            # safety check
+            if len(band_feats) == 0:
+                raise RuntimeError("No active subbands available in model configuration")
+
+            min_t = min(b.shape[1] for b in band_feats)
+            band_feats = [b[:, :min_t, :] for b in band_feats]
+
             feats = torch.cat(band_feats, dim=-1)
 
         if self.cfg.temporal == "bilstm":
