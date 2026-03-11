@@ -104,8 +104,25 @@ def compute_subbands(sig: np.ndarray, fs: int) -> Dict[str, np.ndarray]:
 
 
 def preprocess_audio(path: str, cfg: PreprocessConfig) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+    # sig, _ = librosa.load(path, sr=cfg.sr, mono=True)
+    # sig = adaptive_silence_removal(sig, cfg)
     sig, _ = librosa.load(path, sr=cfg.sr, mono=True)
+
+    # -------------------------
+    # Data augmentation
+    # -------------------------
+    if np.random.rand() < 0.5:
+        sig = sig + 0.003 * np.random.randn(len(sig))   # Gaussian noise
+
+    if np.random.rand() < 0.5:
+        gain = np.random.uniform(0.8, 1.2)              # random gain
+        sig = sig * gain
+
+    # -------------------------
+    # Continue pipeline
+    # -------------------------
     sig = adaptive_silence_removal(sig, cfg)
+
     subbands = compute_subbands(sig, cfg.sr)
     feats = {k: stft_logmel(v, cfg) for k, v in subbands.items()}
     stacked = np.concatenate(list(feats.values()), axis=0)
