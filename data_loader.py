@@ -33,9 +33,13 @@ class ChewingDataset(Dataset):
 
     def __getitem__(self, idx: int):
         rec = self.records[idx]
-        feats, sig = preprocess_audio(str(rec.path), self.cfg)
-        t = min(v.shape[1] for v in feats.values())
-        x = np.stack([feats[k][:, :t] for k in ["B1", "B2", "B3", "B4"]], axis=0)
+        # feats, sig = preprocess_audio(str(rec.path), self.cfg)
+        # t = min(v.shape[1] for v in feats.values())
+        # x = np.stack([feats[k][:, :t] for k in ["B1", "B2", "B3", "B4"]], axis=0)
+        feature_path = rec.path.with_suffix(".npy")
+        x = np.load(feature_path)
+        t = x.shape[-1]
+        sig = None
         detection_target = np.ones((t,), dtype=np.int64)
         texture_target = rec.texture_id
         rate_target = self.rate_map.get(rec.path.name, np.nan)
