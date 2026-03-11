@@ -6,6 +6,7 @@ from typing import Dict
 
 import numpy as np
 import torch
+import time
 from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -78,9 +79,14 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     stale = 0
 
     for epoch in range(cfg.epochs):
+        epoch_start = time.time()
         train_out = run_epoch(model, train_loader, opt, device, True, cfg)
         val_out = run_epoch(model, val_loader, opt, device, False, cfg)
+        # Compute validation accuracy (texture classification)
+        val_pred = torch.argmax(val_out["tex_logits"], dim=1)
+        val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
         sched.step(val_out["loss"])
+        epoch_time = time.time() - epoch_start
 
         if val_out["loss"] < best:
             best = val_out["loss"]
@@ -91,7 +97,14 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
         if stale >= cfg.patience:
             break
 
-        print(f"Epoch {epoch+1:03d} | train={train_out['loss']:.4f} val={val_out['loss']:.4f}")
+        # print(f"Epoch {epoch+1:03d} | train={train_out['loss']:.4f} val={val_out['loss']:.4f}")
+        print(
+            f"Epoch {epoch+1:03d} | "
+            f"train_loss={train_out['loss']:.4f} | "
+            f"val_loss={val_out['loss']:.4f} | "
+            f"val_acc={val_acc:.3f} | "
+            f"time={epoch_time:.2f}s"
+        )
 
     if best_state is not None:
         model.load_state_dict(best_state)
