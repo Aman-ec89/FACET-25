@@ -125,8 +125,13 @@ def run(args):
             attn = base_model(b["x"].to(device))["attn"].cpu().numpy()
         make_attention_plot(attn, out_dir / "attention_weights.png")
         # make_psd_subband_plot(b["signal"][0].numpy(), fs=p_cfg.sr, path=out_dir / "psd_subbands.png")
-        if b["signal"] is not None:
-            make_psd_subband_plot(b["signal"][0].numpy(), fs=p_cfg.sr, path=out_dir / "psd_subbands.png")
+        # if b["signal"] is not None:
+        #     make_psd_subband_plot(b["signal"][0].numpy(), fs=p_cfg.sr, path=out_dir / "psd_subbands.png")
+        try:
+            if b.get("signal") is not None and len(b["signal"]) > 0:
+                make_psd_subband_plot(b["signal"][0].numpy(),fs=p_cfg.sr,path=out_dir / "psd_subbands.png")
+except Exception:
+    pass
         break
     if not rate_df.empty:
         make_rate_scatter(rate_df["mae"].tolist(), rate_df["rmse"].tolist(), out_dir / "rate_scatter.png")
