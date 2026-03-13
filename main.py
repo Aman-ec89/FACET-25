@@ -85,7 +85,8 @@ def run(args):
                         "tex_y": b["tex_y"],
                     }
                 )
-        merged = {k: torch.cat([o[k] for o in out], dim=0) for k in out[0]}
+        # merged = {k: torch.cat([o[k] for o in out], dim=0) for k in out[0]}
+        merged = {k: torch.cat([o[k].reshape(-1, *o[k].shape[2:]) for o in out], dim=0) for k in out[0]}
         det_true, det_pred, det_prob, tex_true, tex_pred = _eval_logits(merged)
 
         dmet = detection_metrics(det_true, det_pred, det_prob)
