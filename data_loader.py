@@ -55,8 +55,20 @@ class ChewingDataset(Dataset):
         # load cached feature
         # ----------------------------
         x = np.load(feature_path)
+        # normalize features
+        x = (x - np.mean(x)) / (np.std(x) + 1e-8)
+
+        # ------------------------------
+        # SpecAugment style masking
+        # ------------------------------
+        if np.random.rand() < 0.5:
+            t = x.shape[-1]
+            mask_len = np.random.randint(5, 15)
+            start = np.random.randint(0, max(1, t - mask_len))
+            x[:, :, start:start+mask_len] = 0
 
         t = x.shape[-1]
+        sig = None
 
         detection_target = np.ones((t,), dtype=np.int64)
         texture_target = rec.texture_id
