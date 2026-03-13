@@ -30,11 +30,16 @@ from utils import count_parameters, device_auto, ensure_dir, set_seed
 
 
 def _eval_logits(out):
-    det_prob = torch.softmax(out["det_logits"], dim=-1)[..., 1].reshape(-1).numpy()
-    det_pred = out["det_logits"].argmax(-1).reshape(-1).numpy()
-    det_true = out["det_y"].reshape(-1).numpy()
-    tex_pred = out["tex_logits"].argmax(-1).numpy()
-    tex_true = out["tex_y"].numpy()
+    # det_prob = torch.softmax(out["det_logits"], dim=-1)[..., 1].reshape(-1).numpy()
+    # det_pred = out["det_logits"].argmax(-1).reshape(-1).numpy()
+    # det_true = out["det_y"].reshape(-1).numpy()
+    # tex_pred = out["tex_logits"].argmax(-1).numpy()
+    # tex_true = out["tex_y"].numpy()
+    det_prob = torch.softmax(out["det_logits"], dim=-1)[...,1].cpu().numpy().reshape(-1)
+    det_pred = out["det_logits"].argmax(-1).cpu().numpy().reshape(-1)
+    det_true = out["det_y"].cpu().numpy().reshape(-1)
+    tex_pred = out["tex_logits"].argmax(-1).cpu().numpy().reshape(-1)
+    tex_true = out["tex_y"].cpu().numpy().reshape(-1)
     return det_true, det_pred, det_prob, tex_true, tex_pred
 
 
