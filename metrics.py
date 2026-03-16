@@ -46,4 +46,6 @@ def chewing_rate_metrics(gt, pred) -> Dict[str, float]:
 
 
 def texture_confusion(y_true, y_pred):
-    return confusion_matrix(y_true, y_pred)
+
+    # Force fixed 4×4 confusion matrix
+    return confusion_matrix(y_true, y_pred, labels=[0, 1, 2, 3])
