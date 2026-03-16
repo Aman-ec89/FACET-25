@@ -174,7 +174,7 @@ def kaggle_pretrain_split(records: Sequence[AudioRecord], seed: int = 42):
 # --------------------------------------------------------
 # DataLoader
 # --------------------------------------------------------
-
+from torch.utils.data import WeightedRandomSampler
 def make_loader(
     records: Sequence[AudioRecord],
     cfg: PreprocessConfig,
@@ -185,11 +185,27 @@ def make_loader(
 
     ds = ChewingDataset(records, cfg, rate_csv=rate_csv)
 
+    # --------------------------------
+    # Balanced batch sampling
+    # --------------------------------
+    labels = [r.texture_id for r in records]
+
+    class_counts = np.bincount(labels)
+    class_weights = 1.0 / (class_counts + 1e-6)
+
+    sample_weights = [class_weights[l] for l in labels]
+
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
+    )
+
     return DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=2,
+        num_workers=1,
         pin_memory=True,
         collate_fn=_collate,
     )
