@@ -30,8 +30,10 @@ class ChewingDataset(Dataset):
             df = pd.read_csv(rate_csv)
             self.rate_map = dict(zip(df["filename"], df["rate_bpm"]))
 
-        # root feature directory
-        self.feature_root = Path("features")
+        # root feature directory (Google Drive)
+        self.feature_root = Path("/content/drive/MyDrive/PhD Phase 3/Paper 7/chewing project/features")
+    # # root feature directory
+        # self.feature_root = Path("features")
 
     def __len__(self):
         return len(self.records)
