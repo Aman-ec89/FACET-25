@@ -31,9 +31,13 @@ from utils import count_parameters, device_auto, ensure_dir, set_seed
 
 
 # =========================================================
-# SAFE MERGE FUNCTION (FIXED)
+# SAFE MERGE (FULLY ROBUST)
 # =========================================================
 def safe_merge(out_list):
+
+    if len(out_list) == 0:
+        raise ValueError("Empty output list in safe_merge")
+
     merged = {}
 
     for k in out_list[0]:
@@ -42,22 +46,23 @@ def safe_merge(out_list):
             merged[k] = sum([o[k] for o in out_list], [])
 
         else:
-            tensors = [o[k] for o in out_list]
+            tensors = [o[k] for o in out_list if o[k] is not None]
+
+            if len(tensors) == 0:
+                continue
 
             try:
                 merged[k] = torch.cat(tensors, dim=0)
 
             except RuntimeError:
-                # pad along LAST dimension only
+                # pad last dimension safely
                 max_t = max(t.shape[-1] for t in tensors)
 
                 padded = []
                 for t in tensors:
                     pad_size = max_t - t.shape[-1]
-
                     if pad_size > 0:
-                        t = F.pad(t, (0, pad_size))  # pad last dim
-
+                        t = F.pad(t, (0, pad_size))
                     padded.append(t)
 
                 merged[k] = torch.cat(padded, dim=0)
@@ -69,6 +74,7 @@ def safe_merge(out_list):
 # LOGIT PROCESSING
 # =========================================================
 def _eval_logits(out):
+
     det_prob = torch.softmax(out["det_logits"], dim=-1)[..., 1].cpu().numpy().reshape(-1)
     det_pred = out["det_logits"].argmax(-1).cpu().numpy().reshape(-1)
     det_true = out["det_y"].cpu().numpy().reshape(-1)
@@ -84,6 +90,7 @@ def _eval_logits(out):
 # MAIN RUN
 # =========================================================
 def run(args):
+
     set_seed(args.seed)
     device = device_auto()
     out_dir = ensure_dir(args.output_dir)
@@ -96,24 +103,27 @@ def run(args):
     recorded_records = load_recorded_records(args.recorded_dir)
 
     ktr, kva = kaggle_pretrain_split(kaggle_records, seed=args.seed)
+
     pretrain_train = make_loader(ktr, p_cfg, t_cfg.batch_size, True)
     pretrain_val = make_loader(kva, p_cfg, t_cfg.batch_size, False)
 
     # ========================
     # Stage 1
     # ========================
-    base_model = FrequencyAwareMultiTaskNet(m_cfg).to(device)
     print("[Stage 1] pretraining on Kaggle")
-    base_model = train_model(base_model, pretrain_train, pretrain_val, device, t_cfg)
 
-    fold_det, fold_tex, fold_rate = [], [], []
-    roc_true_all, roc_prob_all = [], []
-    cm_sum = np.zeros((4, 4), dtype=int)
+    base_model = FrequencyAwareMultiTaskNet(m_cfg).to(device)
+    base_model = train_model(base_model, pretrain_train, pretrain_val, device, t_cfg)
 
     # ========================
     # Stage 2 (LOSO)
     # ========================
+    fold_det, fold_tex = [], []
+    roc_true_all, roc_prob_all = [], []
+    cm_sum = np.zeros((4, 4), dtype=int)
+
     for tr_records, te_records, sid in loso_splits(recorded_records):
+
         print(f"[Stage 2] LOSO subject={sid}")
 
         tr_loader = make_loader(tr_records, p_cfg, t_cfg.batch_size, True, rate_csv=args.rate_csv)
@@ -121,23 +131,28 @@ def run(args):
 
         model = FrequencyAwareMultiTaskNet(m_cfg).to(device)
         model.load_state_dict(base_model.state_dict(), strict=False)
+
         model = train_model(model, tr_loader, te_loader, device, t_cfg)
 
         # -------- Evaluation --------
         out = []
+
         model.eval()
         with torch.no_grad():
             for b in te_loader:
                 x = b["x"].to(device)
                 pred = model(x)
-                out.append(
-                    {
-                        "det_logits": pred["det_logits"].cpu(),
-                        "tex_logits": pred["tex_logits"].cpu(),
-                        "det_y": b["det_y"],
-                        "tex_y": b["tex_y"],
-                    }
-                )
+
+                out.append({
+                    "det_logits": pred["det_logits"].cpu(),
+                    "tex_logits": pred["tex_logits"].cpu(),
+                    "det_y": b["det_y"],
+                    "tex_y": b["tex_y"],
+                })
+
+        if len(out) == 0:
+            print(f"⚠️ Skipping subject {sid} (no data)")
+            continue
 
         merged = safe_merge(out)
 
@@ -155,15 +170,21 @@ def run(args):
         roc_true_all.extend(det_true.tolist())
         roc_prob_all.extend(det_prob.tolist())
 
+        # FIX: ensure full confusion matrix shape
         cm_sum += texture_confusion(tex_true, tex_pred)
 
     # ========================
-    # Results
+    # RESULTS
     # ========================
     det_df, _ = summarize_fold_metrics(fold_det, out_dir, "detection_results")
     tex_df, _ = summarize_fold_metrics(fold_tex, out_dir, "texture_results")
 
-    make_roc_plot(np.array(roc_true_all), np.array(roc_prob_all), out_dir / "roc_curve.png")
+    # ROC safe check
+    if len(np.unique(roc_true_all)) > 1:
+        make_roc_plot(np.array(roc_true_all), np.array(roc_prob_all), out_dir / "roc_curve.png")
+    else:
+        print("⚠️ ROC skipped (single class only)")
+
     make_confusion_plot(cm_sum, out_dir / "texture_confusion_matrix.png")
 
     print(f"Done. Outputs saved to: {out_dir}")
@@ -173,12 +194,15 @@ def run(args):
 # ENTRY
 # =========================================================
 if __name__ == "__main__":
+
     ap = argparse.ArgumentParser()
+
     ap.add_argument("--recorded_dir", type=str, default="Recorded audio")
     ap.add_argument("--kaggle_dir", type=str, default="Kaggle audio")
     ap.add_argument("--rate_csv", type=str, default="chewing_rate.csv")
     ap.add_argument("--output_dir", type=str, default="outputs")
-    ap.add_argument("--batch_size", type=int, default=128)
+
+    ap.add_argument("--batch_size", type=int, default=64)   # 🔥 recommended
     ap.add_argument("--epochs", type=int, default=10)
     ap.add_argument("--seed", type=int, default=42)
 
