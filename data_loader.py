@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 from preprocessing import PreprocessConfig
 from utils import AudioRecord, parse_kaggle_filename, parse_recorded_filename
 
-import random
 from collections import defaultdict
 
 
@@ -36,8 +35,9 @@ class ChewingDataset(Dataset):
             df = pd.read_csv(rate_csv)
             self.rate_map = dict(zip(df["filename"], df["rate_bpm"]))
 
-        # Google Drive feature path
-        self.feature_root = Path("/content/drive/MyDrive/PhD Phase 3/Paper 7/chewing project/features")
+        self.feature_root = Path(
+            "/content/drive/MyDrive/PhD Phase 3/Paper 7/chewing project/features"
+        )
 
     def __len__(self):
         return len(self.records)
@@ -46,9 +46,7 @@ class ChewingDataset(Dataset):
 
         rec = self.records[idx]
 
-        # ----------------------------
         # feature path
-        # ----------------------------
         if "Kaggle" in rec.path.parent.name:
             feature_path = self.feature_root / "kaggle" / (rec.path.stem + ".npy")
         else:
@@ -57,15 +55,10 @@ class ChewingDataset(Dataset):
         if not feature_path.exists():
             raise FileNotFoundError(f"Missing feature file: {feature_path}")
 
-        # ----------------------------
-        # load feature
-        # ----------------------------
         x = np.load(feature_path)
         x = (x - np.mean(x)) / (np.std(x) + 1e-8)
 
-        # ----------------------------
         # SpecAugment masking
-        # ----------------------------
         if np.random.rand() < 0.5:
             t = x.shape[-1]
             mask_len = np.random.randint(5, 15)
@@ -78,10 +71,12 @@ class ChewingDataset(Dataset):
             "x": torch.tensor(x, dtype=torch.float32),
             "det_y": torch.ones((t,), dtype=torch.long),
             "tex_y": torch.tensor(rec.texture_id, dtype=torch.long),
-            "rate_y": torch.tensor(self.rate_map.get(rec.path.name, np.nan), dtype=torch.float32),
+            "rate_y": torch.tensor(
+                self.rate_map.get(rec.path.name, np.nan), dtype=torch.float32
+            ),
             "subject_id": rec.subject_id if rec.subject_id is not None else -1,
             "file": rec.path.name,
-            "signal": None
+            "signal": None,
         }
 
 
@@ -89,6 +84,9 @@ class ChewingDataset(Dataset):
 # COLLATE
 # ========================================================
 def _collate(batch):
+
+    if len(batch) == 0:
+        raise ValueError("Empty batch received in collate")
 
     t = min(b["x"].shape[-1] for b in batch)
 
@@ -132,7 +130,6 @@ def load_kaggle_records(root: str | Path) -> List[AudioRecord]:
 # LOSO SPLIT
 # ========================================================
 def loso_splits(records: Sequence[AudioRecord]):
-
     subjects = sorted({r.subject_id for r in records if r.subject_id is not None})
 
     for sid in subjects:
@@ -159,7 +156,7 @@ def kaggle_pretrain_split(records: Sequence[AudioRecord], seed: int = 42):
 
 
 # ========================================================
-# BALANCED BATCH SAMPLER (PRIMARY FIX)
+# BALANCED SAMPLER (FINAL FIXED VERSION)
 # ========================================================
 class BalancedBatchSampler(Sampler):
 
@@ -178,15 +175,8 @@ class BalancedBatchSampler(Sampler):
 
         self.samples_per_class = max(1, batch_size // self.num_classes)
 
-        for c in self.classes:
-            random.shuffle(self.class_indices[c])
-
-        self.ptrs = {c: 0 for c in self.classes}
-
-        self.num_batches = min(
-            len(self.class_indices[c]) // self.samples_per_class
-            for c in self.classes
-        )
+        # ALWAYS safe number of batches
+        self.num_batches = max(1, len(dataset) // batch_size)
 
     def __iter__(self):
 
@@ -195,13 +185,24 @@ class BalancedBatchSampler(Sampler):
             batch = []
 
             for c in self.classes:
-                start = self.ptrs[c]
-                end = start + self.samples_per_class
+                indices = self.class_indices[c]
 
-                batch.extend(self.class_indices[c][start:end])
-                self.ptrs[c] = end
+                if len(indices) == 0:
+                    continue
 
-            random.shuffle(batch)
+                chosen = np.random.choice(
+                    indices,
+                    self.samples_per_class,
+                    replace=True  # 🔥 critical fix
+                )
+
+                batch.extend(chosen.tolist())
+
+            if len(batch) == 0:
+                continue
+
+            batch = batch[:self.batch_size]
+
             yield batch
 
     def __len__(self):
@@ -221,7 +222,6 @@ def make_loader(
 
     ds = ChewingDataset(records, cfg, rate_csv=rate_csv)
 
-    # ✅ TRAIN → balanced batches
     if shuffle:
         sampler = BalancedBatchSampler(ds, batch_size)
 
@@ -233,7 +233,6 @@ def make_loader(
             collate_fn=_collate,
         )
 
-    # ✅ VAL / TEST → normal loader
     return DataLoader(
         ds,
         batch_size=batch_size,
