@@ -17,38 +17,39 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # ==========================================
 @dataclass
 class TrainConfig:
-    lr: float = 3e-5
+    lr: float = 1e-4   # 🔥 increased for better learning
     batch_size: int = 64
     epochs: int = 10
     patience: int = 5
     grad_clip: float = 5.0
-    alpha_det: float = 0.4
-    alpha_tex: float = 0.6
+    alpha_det: float = 0.0   # ❌ detection disabled
+    alpha_tex: float = 1.0   # ✅ full focus on texture
 
 
 # ==========================================
-# CLASS WEIGHTS (FIXED IMBALANCE)
-# Order: [fibrous, crunchy, soft, brittle]
+# CLASS WEIGHTS (CORRECTED)
 # ==========================================
 def get_class_weights(device):
+    # Order: [fibrous, crunchy, soft, brittle]
     class_counts = torch.tensor([449, 610, 361, 240], dtype=torch.float32)
-    weights = 1.0 / class_counts
-    weights = weights / weights.sum()
+
+    # ✅ proper inverse-frequency weighting
+    weights = class_counts.sum() / class_counts
+
     return weights.to(device)
 
 
 # ==========================================
-# LOSS FUNCTION (WITH WEIGHTS)
+# LOSS FUNCTION (TEXTURE ONLY)
 # ==========================================
-def multitask_loss(outputs, det_y, tex_y, det_weight=None, tex_weight=None, alpha_det=0.4, alpha_tex=0.6):
-    det_ce = nn.CrossEntropyLoss(weight=det_weight)
+def multitask_loss(outputs, det_y, tex_y, tex_weight=None):
+
     tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
 
-    det = det_ce(outputs["det_logits"].reshape(-1, 2), det_y.reshape(-1))
     tex = tex_ce(outputs["tex_logits"], tex_y)
 
-    return alpha_det * det + alpha_tex * tex, {
-        "det_loss": float(det.item()),
+    return tex, {
+        "det_loss": 0.0,
         "tex_loss": float(tex.item()),
     }
 
@@ -65,21 +66,20 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
     tex_logits_all, tex_y_all = [], []
 
     for batch in loader:
+
         x = batch["x"].to(device, non_blocking=True)
         det_y = batch["det_y"].to(device, non_blocking=True)
         tex_y = batch["tex_y"].to(device, non_blocking=True)
 
         with torch.set_grad_enabled(train):
+
             out = model(x)
 
             loss, _ = multitask_loss(
                 out,
                 det_y,
                 tex_y,
-                det_weight=None,
-                tex_weight=tex_weights,   # ✅ weighted loss applied
-                alpha_det=cfg.alpha_det,
-                alpha_tex=cfg.alpha_tex,
+                tex_weight=tex_weights,
             )
 
             if train:
@@ -96,7 +96,7 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
         tex_y_all.append(tex_y.detach().cpu())
 
     return {
-        "loss": float(np.mean(losses)),
+        "loss": float(np.mean(losses)) if losses else 0.0,
         "det_logits": torch.cat([x.reshape(-1, x.shape[-1]) for x in det_logits_all], 0),
         "det_y": torch.cat([x.reshape(-1) for x in det_y_all], 0),
         "tex_logits": torch.cat(tex_logits_all, 0),
@@ -112,7 +112,6 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     opt = AdamW(model.parameters(), lr=cfg.lr)
     sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
 
-    # ✅ get weights ONCE
     tex_weights = get_class_weights(device)
 
     best = float("inf")
@@ -120,12 +119,13 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     stale = 0
 
     for epoch in range(cfg.epochs):
+
         epoch_start = time.time()
 
         train_out = run_epoch(model, train_loader, opt, device, True, cfg, tex_weights)
         val_out = run_epoch(model, val_loader, opt, device, False, cfg, tex_weights)
 
-        # accuracy
+        # texture accuracy
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
 
