@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 @dataclass
 class TrainConfig:
     lr: float = 3e-5
-    batch_size: int = 64
+    batch_size: int = 128
     epochs: int = 10
     patience: int = 5
     grad_clip: float = 5.0
