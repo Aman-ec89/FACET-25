@@ -179,7 +179,21 @@ def run(args):
             for b in pretrain_val:
                 pred = model(b["x"].to(device))
                 out.append({"det_logits": pred["det_logits"].cpu(), "tex_logits": pred["tex_logits"].cpu(), "det_y": b["det_y"], "tex_y": b["tex_y"]})
-        merged = {k: torch.cat([o[k] for o in out], dim=0) for k in out[0]}
+        # merged = {k: torch.cat([o[k] for o in out], dim=0) for k in out[0]}
+        merged = {}
+
+        for k in out[0]:
+            if k in ["file", "signal"]:
+                merged[k] = sum([o[k] for o in out], [])
+            else:
+                try:
+                    merged[k] = torch.cat([o[k] for o in out], dim=0)
+                except RuntimeError:
+                    # handle variable length tensors (e.g., time dimension)
+                    merged[k] = torch.nn.utils.rnn.pad_sequence(
+                        [o[k] for o in out],
+                        batch_first=True
+                    )
         _, _, _, tex_true, tex_pred = _eval_logits(merged)
         tm = texture_metrics(tex_true, tex_pred)
         tm["variant"] = name
