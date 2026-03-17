@@ -170,6 +170,68 @@ def kaggle_pretrain_split(records: Sequence[AudioRecord], seed: int = 42):
 
     return [records[i] for i in tr_idx], [records[i] for i in va_idx]
 
+from torch.utils.data import Sampler
+import random
+from collections import defaultdict
+
+
+class BalancedBatchSampler(Sampler):
+    """
+    Ensures each batch has balanced classes.
+    """
+
+    def __init__(self, dataset, batch_size):
+
+        self.dataset = dataset
+        self.batch_size = batch_size
+
+        # group indices by class
+        self.class_indices = defaultdict(list)
+
+        for i, rec in enumerate(dataset.records):
+            self.class_indices[rec.texture_id].append(i)
+
+        self.classes = list(self.class_indices.keys())
+        self.num_classes = len(self.classes)
+
+        # samples per class in each batch
+        self.samples_per_class = max(1, batch_size // self.num_classes)
+
+        # shuffle indices
+        for c in self.classes:
+            random.shuffle(self.class_indices[c])
+
+        # pointers
+        self.ptrs = {c: 0 for c in self.classes}
+
+        # total batches
+        self.num_batches = min(
+            len(self.class_indices[c]) // self.samples_per_class
+            for c in self.classes
+        )
+
+    def __iter__(self):
+
+        for _ in range(self.num_batches):
+
+            batch = []
+
+            for c in self.classes:
+                start = self.ptrs[c]
+                end = start + self.samples_per_class
+
+                batch.extend(self.class_indices[c][start:end])
+
+                self.ptrs[c] = end
+
+            random.shuffle(batch)
+            yield batch
+
+    def __len__(self):
+        return self.num_batches
+
+
+
 
 # --------------------------------------------------------
 # DataLoader
@@ -200,12 +262,30 @@ def make_loader(
         num_samples=len(sample_weights),
         replacement=True
     )
+    if shuffle:
+        sampler = BalancedBatchSampler(ds, batch_size)
 
-    return DataLoader(
-        ds,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=1,
-        pin_memory=True,
-        collate_fn=_collate,
-    )
+        return DataLoader(
+            ds,
+            batch_sampler=sampler,
+            num_workers=2,
+            pin_memory=True,
+            collate_fn=_collate,
+        )
+    else:
+        return DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=2,
+            pin_memory=True,
+            collate_fn=_collate,
+        )
+    # return DataLoader(
+    #     ds,
+    #     batch_size=batch_size,
+    #     shuffle=shuffle,
+    #     num_workers=1,
+    #     pin_memory=True,
+    #     collate_fn=_collate,
+    # )
