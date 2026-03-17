@@ -2,18 +2,24 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Sequence
 
 import numpy as np
 import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from preprocessing import PreprocessConfig
 from utils import AudioRecord, parse_kaggle_filename, parse_recorded_filename
 
+import random
+from collections import defaultdict
 
+
+# ========================================================
+# DATASET
+# ========================================================
 class ChewingDataset(Dataset):
 
     def __init__(
@@ -30,10 +36,8 @@ class ChewingDataset(Dataset):
             df = pd.read_csv(rate_csv)
             self.rate_map = dict(zip(df["filename"], df["rate_bpm"]))
 
-        # root feature directory (Google Drive)
+        # Google Drive feature path
         self.feature_root = Path("/content/drive/MyDrive/PhD Phase 3/Paper 7/chewing project/features")
-    # # root feature directory
-        # self.feature_root = Path("features")
 
     def __len__(self):
         return len(self.records)
@@ -43,7 +47,7 @@ class ChewingDataset(Dataset):
         rec = self.records[idx]
 
         # ----------------------------
-        # determine feature folder
+        # feature path
         # ----------------------------
         if "Kaggle" in rec.path.parent.name:
             feature_path = self.feature_root / "kaggle" / (rec.path.stem + ".npy")
@@ -54,51 +58,44 @@ class ChewingDataset(Dataset):
             raise FileNotFoundError(f"Missing feature file: {feature_path}")
 
         # ----------------------------
-        # load cached feature
+        # load feature
         # ----------------------------
         x = np.load(feature_path)
-        # normalize features
         x = (x - np.mean(x)) / (np.std(x) + 1e-8)
 
-        # ------------------------------
-        # SpecAugment style masking
-        # ------------------------------
+        # ----------------------------
+        # SpecAugment masking
+        # ----------------------------
         if np.random.rand() < 0.5:
             t = x.shape[-1]
             mask_len = np.random.randint(5, 15)
             start = np.random.randint(0, max(1, t - mask_len))
-            x[:, :, start:start+mask_len] = 0
+            x[:, :, start:start + mask_len] = 0
 
         t = x.shape[-1]
-        sig = None
-
-        detection_target = np.ones((t,), dtype=np.int64)
-        texture_target = rec.texture_id
-        rate_target = self.rate_map.get(rec.path.name, np.nan)
 
         return {
             "x": torch.tensor(x, dtype=torch.float32),
-            "det_y": torch.tensor(detection_target, dtype=torch.long),
-            "tex_y": torch.tensor(texture_target, dtype=torch.long),
-            "rate_y": torch.tensor(rate_target, dtype=torch.float32),
+            "det_y": torch.ones((t,), dtype=torch.long),
+            "tex_y": torch.tensor(rec.texture_id, dtype=torch.long),
+            "rate_y": torch.tensor(self.rate_map.get(rec.path.name, np.nan), dtype=torch.float32),
             "subject_id": rec.subject_id if rec.subject_id is not None else -1,
             "file": rec.path.name,
             "signal": None
         }
 
 
-# --------------------------------------------------------
-# Batch collation
-# --------------------------------------------------------
-
+# ========================================================
+# COLLATE
+# ========================================================
 def _collate(batch):
 
     t = min(b["x"].shape[-1] for b in batch)
 
-    x = torch.stack([b["x"][..., :t] for b in batch], dim=0)
-    det = torch.stack([b["det_y"][:t] for b in batch], dim=0)
-    tex = torch.stack([b["tex_y"] for b in batch], dim=0)
-    rate = torch.stack([b["rate_y"] for b in batch], dim=0)
+    x = torch.stack([b["x"][..., :t] for b in batch])
+    det = torch.stack([b["det_y"][:t] for b in batch])
+    tex = torch.stack([b["tex_y"] for b in batch])
+    rate = torch.stack([b["rate_y"] for b in batch])
 
     return {
         "x": x,
@@ -110,18 +107,15 @@ def _collate(batch):
     }
 
 
-# --------------------------------------------------------
-# Dataset loaders
-# --------------------------------------------------------
-
+# ========================================================
+# LOADERS
+# ========================================================
 def load_recorded_records(root: str | Path) -> List[AudioRecord]:
-
     root = Path(root)
     return [parse_recorded_filename(p) for p in sorted(root.glob("*.wav"))]
 
 
 def load_kaggle_records(root: str | Path) -> List[AudioRecord]:
-
     root = Path(root)
     out = []
 
@@ -134,29 +128,22 @@ def load_kaggle_records(root: str | Path) -> List[AudioRecord]:
     return out
 
 
-# --------------------------------------------------------
-# Leave-One-Subject-Out splits
-# --------------------------------------------------------
-
+# ========================================================
+# LOSO SPLIT
+# ========================================================
 def loso_splits(records: Sequence[AudioRecord]):
 
     subjects = sorted({r.subject_id for r in records if r.subject_id is not None})
 
-    folds = []
-
     for sid in subjects:
         train = [r for r in records if r.subject_id != sid]
         test = [r for r in records if r.subject_id == sid]
-
-        folds.append((train, test, sid))
-
-    return folds
+        yield train, test, sid
 
 
-# --------------------------------------------------------
-# Kaggle pretraining split
-# --------------------------------------------------------
-
+# ========================================================
+# KAGGLE SPLIT
+# ========================================================
 def kaggle_pretrain_split(records: Sequence[AudioRecord], seed: int = 42):
 
     idx = np.arange(len(records))
@@ -170,22 +157,17 @@ def kaggle_pretrain_split(records: Sequence[AudioRecord], seed: int = 42):
 
     return [records[i] for i in tr_idx], [records[i] for i in va_idx]
 
-from torch.utils.data import Sampler
-import random
-from collections import defaultdict
 
-
+# ========================================================
+# BALANCED BATCH SAMPLER (PRIMARY FIX)
+# ========================================================
 class BalancedBatchSampler(Sampler):
-    """
-    Ensures each batch has balanced classes.
-    """
 
     def __init__(self, dataset, batch_size):
 
         self.dataset = dataset
         self.batch_size = batch_size
 
-        # group indices by class
         self.class_indices = defaultdict(list)
 
         for i, rec in enumerate(dataset.records):
@@ -194,17 +176,13 @@ class BalancedBatchSampler(Sampler):
         self.classes = list(self.class_indices.keys())
         self.num_classes = len(self.classes)
 
-        # samples per class in each batch
         self.samples_per_class = max(1, batch_size // self.num_classes)
 
-        # shuffle indices
         for c in self.classes:
             random.shuffle(self.class_indices[c])
 
-        # pointers
         self.ptrs = {c: 0 for c in self.classes}
 
-        # total batches
         self.num_batches = min(
             len(self.class_indices[c]) // self.samples_per_class
             for c in self.classes
@@ -221,7 +199,6 @@ class BalancedBatchSampler(Sampler):
                 end = start + self.samples_per_class
 
                 batch.extend(self.class_indices[c][start:end])
-
                 self.ptrs[c] = end
 
             random.shuffle(batch)
@@ -231,12 +208,9 @@ class BalancedBatchSampler(Sampler):
         return self.num_batches
 
 
-
-
-# --------------------------------------------------------
-# DataLoader
-# --------------------------------------------------------
-from torch.utils.data import WeightedRandomSampler
+# ========================================================
+# DATALOADER
+# ========================================================
 def make_loader(
     records: Sequence[AudioRecord],
     cfg: PreprocessConfig,
@@ -247,21 +221,7 @@ def make_loader(
 
     ds = ChewingDataset(records, cfg, rate_csv=rate_csv)
 
-    # --------------------------------
-    # Balanced batch sampling
-    # --------------------------------
-    labels = [r.texture_id for r in records]
-
-    class_counts = np.bincount(labels)
-    class_weights = 1.0 / (class_counts + 1e-6)
-
-    sample_weights = [class_weights[l] for l in labels]
-
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True
-    )
+    # ✅ TRAIN → balanced batches
     if shuffle:
         sampler = BalancedBatchSampler(ds, batch_size)
 
@@ -272,20 +232,13 @@ def make_loader(
             pin_memory=True,
             collate_fn=_collate,
         )
-    else:
-        return DataLoader(
-            ds,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=2,
-            pin_memory=True,
-            collate_fn=_collate,
-        )
-    # return DataLoader(
-    #     ds,
-    #     batch_size=batch_size,
-    #     shuffle=shuffle,
-    #     num_workers=1,
-    #     pin_memory=True,
-    #     collate_fn=_collate,
-    # )
+
+    # ✅ VAL / TEST → normal loader
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=True,
+        collate_fn=_collate,
+    )
