@@ -20,7 +20,7 @@ TEXTURE_TO_ID: Dict[str, int] = {
 ID_TO_TEXTURE = {v: k for k, v in TEXTURE_TO_ID.items()}
 KAGGLE_TO_TEXTURE: Dict[str, str] = {
     "cabbage": "fibrous",
-    "carrot": "crunchy",
+    "carrots": "crunchy",
     "noodles": "soft",
     "chocolate": "brittle",
 }
