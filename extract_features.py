@@ -10,10 +10,12 @@ from preprocessing import preprocess_audio, PreprocessConfig
 RECORDED_DIR = "/content/drive/MyDrive/PhD Phase 3/Paper 7/chewing project/Recorded audio"
 KAGGLE_DIR = "/content/drive/MyDrive/PhD Phase 3/Paper 7/chewing project/Kaggle audio"
 
-# save features in project folder
 OUT_DIR = "features"
 
 cfg = PreprocessConfig()
+
+# 🔧 FIXED TIME LENGTH
+FIXED_T = 200
 
 def process_folder(audio_dir, out_dir):
 
@@ -27,15 +29,24 @@ def process_folder(audio_dir, out_dir):
     for i, f in enumerate(files):
 
         try:
-
             feats, _ = preprocess_audio(str(f), cfg)
 
-            t = min(v.shape[1] for v in feats.values())
+            processed = []
 
-            x = np.stack(
-                [feats[k][:, :t] for k in ["B1", "B2", "B3", "B4"]],
-                axis=0
-            )
+            for k in ["B1", "B2", "B3", "B4"]:
+                x = feats[k]
+
+                # 🔧 FIX TIME DIMENSION (MAIN FIX)
+                if x.shape[1] > FIXED_T:
+                    x = x[:, :FIXED_T]   # truncate
+                else:
+                    pad = FIXED_T - x.shape[1]
+                    x = np.pad(x, ((0, 0), (0, pad)))  # pad
+
+                processed.append(x)
+
+            # shape → (4, 64, 200)
+            x = np.stack(processed, axis=0)
 
             np.save(os.path.join(out_dir, f.stem + ".npy"), x)
 
@@ -45,9 +56,15 @@ def process_folder(audio_dir, out_dir):
         except Exception as e:
             print("ERROR:", f.name, e)
 
+
 # ----------------------------
 # RUN EXTRACTION
 # ----------------------------
+
+# ❗ IMPORTANT: remove old features first
+if os.path.exists(OUT_DIR):
+    import shutil
+    shutil.rmtree(OUT_DIR)
 
 os.makedirs(OUT_DIR, exist_ok=True)
 
