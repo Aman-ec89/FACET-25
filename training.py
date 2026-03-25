@@ -90,15 +90,17 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
 
         losses.append(loss.item())
 
-        det_logits_all.append(out["det_logits"].detach().cpu())
+        # det_logits_all.append(out["det_logits"].detach().cpu())
         tex_logits_all.append(out["tex_logits"].detach().cpu())
-        det_y_all.append(det_y.detach().cpu())
+        # det_y_all.append(det_y.detach().cpu())
         tex_y_all.append(tex_y.detach().cpu())
 
     return {
         "loss": float(np.mean(losses)) if losses else 0.0,
-        "det_logits": torch.cat([x.reshape(-1, x.shape[-1]) for x in det_logits_all], 0),
-        "det_y": torch.cat([x.reshape(-1) for x in det_y_all], 0),
+        # "det_logits": torch.cat([x.reshape(-1, x.shape[-1]) for x in det_logits_all], 0),
+        "det_logits": None,
+        # "det_y": torch.cat([x.reshape(-1) for x in det_y_all], 0),
+        "det_y": None,
         "tex_logits": torch.cat(tex_logits_all, 0),
         "tex_y": torch.cat(tex_y_all, 0),
     }
@@ -127,6 +129,7 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
         # texture accuracy
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
+        print("Pred classes:", torch.unique(val_pred))
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
 
         sched.step(val_out["loss"])
