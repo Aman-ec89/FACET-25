@@ -1,91 +1,3 @@
-"""Entry point for end-to-end chewing classification experiments (Colab-ready)."""
-from __future__ import annotations
-
-import argparse
-import time
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn.functional as F
-
-from ablation import ablation_variants
-from data_loader import kaggle_pretrain_split, load_kaggle_records, load_recorded_records, loso_splits, make_loader
-from evaluation import (
-    compute_wilcoxon,
-    make_ablation_plot,
-    make_confusion_plot,
-    make_rate_scatter,
-    make_roc_plot,
-    make_attention_plot,
-    make_psd_subband_plot,
-    summarize_fold_metrics,
-)
-from metrics import chewing_rate_metrics, detection_metrics, texture_confusion, texture_metrics
-from model import FrequencyAwareMultiTaskNet, ModelConfig
-from preprocessing import PreprocessConfig
-from rate_estimation import estimate_chewing_rate_bpm
-from training import TrainConfig, train_model
-from utils import count_parameters, device_auto, ensure_dir, set_seed
-
-
-# =========================================================
-# SAFE MERGE (FULLY ROBUST)
-# =========================================================
-def safe_merge(out_list):
-
-    if len(out_list) == 0:
-        raise ValueError("Empty output list in safe_merge")
-
-    merged = {}
-
-    for k in out_list[0]:
-
-        if k in ["file", "signal"]:
-            merged[k] = sum([o[k] for o in out_list], [])
-
-        else:
-            tensors = [o[k] for o in out_list if o[k] is not None]
-
-            if len(tensors) == 0:
-                continue
-
-            try:
-                merged[k] = torch.cat(tensors, dim=0)
-
-            except RuntimeError:
-                # pad last dimension safely
-                max_t = max(t.shape[-1] for t in tensors)
-
-                padded = []
-                for t in tensors:
-                    pad_size = max_t - t.shape[-1]
-                    if pad_size > 0:
-                        t = F.pad(t, (0, pad_size))
-                    padded.append(t)
-
-                merged[k] = torch.cat(padded, dim=0)
-
-    return merged
-
-
-# =========================================================
-# LOGIT PROCESSING
-# =========================================================
-def _eval_logits(out):
-
-    det_prob = torch.softmax(out["det_logits"], dim=-1)[..., 1].cpu().numpy().reshape(-1)
-    det_pred = out["det_logits"].argmax(-1).cpu().numpy().reshape(-1)
-    det_true = out["det_y"].cpu().numpy().reshape(-1)
-
-    tex_pred = out["tex_logits"].argmax(-1).cpu().numpy().reshape(-1)
-    tex_true = out["tex_y"].cpu().numpy().reshape(-1)
-
-    n = min(len(tex_true), len(tex_pred))
-    return det_true, det_pred, det_prob, tex_true[:n], tex_pred[:n]
-
-
 # =========================================================
 # MAIN RUN
 # =========================================================
@@ -107,16 +19,20 @@ def run(args):
     pretrain_train = make_loader(ktr, p_cfg, t_cfg.batch_size, True)
     pretrain_val = make_loader(kva, p_cfg, t_cfg.batch_size, False)
 
+    # ========================
+    # 🔍 FIXED LABEL CHECK
+    # ========================
     print("\n🔍 Checking label distribution...")
 
     from collections import Counter
     all_labels = []
-    for batch in train_loader:
+
+    for batch in pretrain_train:   # ✅ FIXED
         all_labels.extend(batch["tex_y"].cpu().numpy())
 
     print("Train label distribution:", Counter(all_labels))
 
-    
+
     # ========================
     # Stage 1
     # ========================
@@ -128,8 +44,7 @@ def run(args):
     # ========================
     # Stage 2 (LOSO)
     # ========================
-    fold_det, fold_tex = [], []
-    roc_true_all, roc_prob_all = [], []
+    fold_tex = []
     cm_sum = np.zeros((4, 4), dtype=int)
 
     for tr_records, te_records, sid in loso_splits(recorded_records):
@@ -154,9 +69,7 @@ def run(args):
                 pred = model(x)
 
                 out.append({
-                    "det_logits": pred["det_logits"].cpu(),
                     "tex_logits": pred["tex_logits"].cpu(),
-                    "det_y": b["det_y"],
                     "tex_y": b["tex_y"],
                 })
 
@@ -166,54 +79,21 @@ def run(args):
 
         merged = safe_merge(out)
 
-        det_true, det_pred, det_prob, tex_true, tex_pred = _eval_logits(merged)
+        tex_pred = merged["tex_logits"].argmax(-1).cpu().numpy()
+        tex_true = merged["tex_y"].cpu().numpy()
 
-        dmet = detection_metrics(det_true, det_pred, det_prob)
         tmet = texture_metrics(tex_true, tex_pred)
-
-        dmet["fold"] = sid
         tmet["fold"] = sid
 
-        fold_det.append(dmet)
         fold_tex.append(tmet)
 
-        roc_true_all.extend(det_true.tolist())
-        roc_prob_all.extend(det_prob.tolist())
-
-        # FIX: ensure full confusion matrix shape
         cm_sum += texture_confusion(tex_true, tex_pred)
 
     # ========================
     # RESULTS
     # ========================
-    det_df, _ = summarize_fold_metrics(fold_det, out_dir, "detection_results")
     tex_df, _ = summarize_fold_metrics(fold_tex, out_dir, "texture_results")
-
-    # ROC safe check
-    if len(np.unique(roc_true_all)) > 1:
-        make_roc_plot(np.array(roc_true_all), np.array(roc_prob_all), out_dir / "roc_curve.png")
-    else:
-        print("⚠️ ROC skipped (single class only)")
 
     make_confusion_plot(cm_sum, out_dir / "texture_confusion_matrix.png")
 
     print(f"Done. Outputs saved to: {out_dir}")
-
-
-# =========================================================
-# ENTRY
-# =========================================================
-if __name__ == "__main__":
-
-    ap = argparse.ArgumentParser()
-
-    ap.add_argument("--recorded_dir", type=str, default="Recorded audio")
-    ap.add_argument("--kaggle_dir", type=str, default="Kaggle audio")
-    ap.add_argument("--rate_csv", type=str, default="chewing_rate.csv")
-    ap.add_argument("--output_dir", type=str, default="outputs")
-
-    ap.add_argument("--batch_size", type=int, default=64)   # 🔥 recommended
-    ap.add_argument("--epochs", type=int, default=10)
-    ap.add_argument("--seed", type=int, default=42)
-
-    run(ap.parse_args())
