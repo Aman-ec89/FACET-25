@@ -107,6 +107,16 @@ def run(args):
     pretrain_train = make_loader(ktr, p_cfg, t_cfg.batch_size, True)
     pretrain_val = make_loader(kva, p_cfg, t_cfg.batch_size, False)
 
+    print("\n🔍 Checking label distribution...")
+
+from collections import Counter
+all_labels = []
+for batch in train_loader:
+    all_labels.extend(batch["tex_y"].cpu().numpy())
+
+print("Train label distribution:", Counter(all_labels))
+
+    
     # ========================
     # Stage 1
     # ========================
