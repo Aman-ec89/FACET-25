@@ -109,12 +109,12 @@ def run(args):
 
     print("\n🔍 Checking label distribution...")
 
-from collections import Counter
-all_labels = []
-for batch in train_loader:
-    all_labels.extend(batch["tex_y"].cpu().numpy())
+    from collections import Counter
+    all_labels = []
+    for batch in train_loader:
+        all_labels.extend(batch["tex_y"].cpu().numpy())
 
-print("Train label distribution:", Counter(all_labels))
+    print("Train label distribution:", Counter(all_labels))
 
     
     # ========================
