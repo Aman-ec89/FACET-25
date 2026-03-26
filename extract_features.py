@@ -26,8 +26,8 @@ def process_folder(audio_dir, out_dir):
     print("\nProcessing:", audio_dir)
     print("Total files:", len(files))
 
-    # for i, f in enumerate(files):
-    for i, f in enumerate(tqdm(files, desc="Extracting features", unit="file")):
+    for i, f in enumerate(files):
+    # for i, f in enumerate(tqdm(files, desc="Extracting features", unit="file")):
 
         try:
             feats, _ = preprocess_audio(str(f), cfg)
