@@ -67,6 +67,9 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
 
     for batch in loader:
 
+        # ==========================================
+        # 🔥 GPU TRANSFER (already correct)
+        # ==========================================
         x = batch["x"].to(device, non_blocking=True)
         det_y = batch["det_y"].to(device, non_blocking=True)
         tex_y = batch["tex_y"].to(device, non_blocking=True)
@@ -93,6 +96,8 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
                 for p in model.parameters():
                     if p.grad is not None:
                         total_norm += p.grad.norm().item()
+
+                # ⚠️ can be noisy → comment if needed
                 print("Grad norm:", round(total_norm, 4))
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
@@ -117,6 +122,14 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
 # ==========================================
 def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
+    # ==========================================
+    # 🔥 FORCE MODEL TO GPU (CRITICAL FIX)
+    # ==========================================
+    model = model.to(device)
+
+    # 🔍 sanity check
+    print("Model running on:", next(model.parameters()).device)
+
     opt = AdamW(model.parameters(), lr=cfg.lr)
 
     # ❌ DISABLED (causing stagnation)
@@ -135,7 +148,9 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
         train_out = run_epoch(model, train_loader, opt, device, True, cfg, tex_weights)
         val_out = run_epoch(model, val_loader, opt, device, False, cfg, tex_weights)
 
-        # texture accuracy
+        # ==========================================
+        # 🔍 DEBUG PREDICTIONS
+        # ==========================================
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
 
         print("Pred classes:", torch.unique(val_pred))  # debug
@@ -144,6 +159,12 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
         # ❌ DISABLED
         # sched.step(val_out["loss"])
+
+        # ==========================================
+        # 🔥 OPTIONAL GPU MEMORY MONITOR
+        # ==========================================
+        if torch.cuda.is_available():
+            print("GPU mem (GB):", round(torch.cuda.memory_allocated() / 1e9, 3))
 
         epoch_time = time.time() - epoch_start
 
