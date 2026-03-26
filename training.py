@@ -65,11 +65,16 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
     losses = []
     tex_logits_all, tex_y_all = [], []
 
-    for batch in loader:
+    # ==========================================
+    # ✅ TOTAL BATCHES (for progress)
+    # ==========================================
+    total_batches = len(loader)
 
-        # ==========================================
-        # 🔥 GPU TRANSFER (already correct)
-        # ==========================================
+    # ==========================================
+    # 🔄 LOOP WITH INDEX
+    # ==========================================
+    for i, batch in enumerate(loader):
+
         x = batch["x"].to(device, non_blocking=True)
         det_y = batch["det_y"].to(device, non_blocking=True)
         tex_y = batch["tex_y"].to(device, non_blocking=True)
@@ -90,15 +95,19 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
                 loss.backward()
 
                 # ==========================================
-                # 🔥 GRADIENT DEBUG (CRITICAL)
+                # 🔥 GRADIENT DEBUG (LIMITED PRINT)
                 # ==========================================
                 total_norm = 0.0
                 for p in model.parameters():
                     if p.grad is not None:
                         total_norm += p.grad.norm().item()
 
-                # ⚠️ can be noisy → comment if needed
-                print("Grad norm:", round(total_norm, 4))
+                # ⚠️ OLD (too noisy)
+                # print("Grad norm:", round(total_norm, 4))
+
+                # ✅ NEW (controlled logging)
+                if i % 50 == 0:
+                    print(f"\n[Batch {i}/{total_batches}] Grad norm:", round(total_norm, 4))
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
                 optimizer.step()
@@ -107,6 +116,12 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
 
         tex_logits_all.append(out["tex_logits"].detach().cpu())
         tex_y_all.append(tex_y.detach().cpu())
+
+        # ==========================================
+        # ✅ PROGRESS BAR
+        # ==========================================
+        progress = (i + 1) / total_batches * 100
+        print(f"\rProgress: {progress:.1f}%", end="")
 
     return {
         "loss": float(np.mean(losses)) if losses else 0.0,
@@ -127,15 +142,14 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     # ==========================================
     model = model.to(device)
 
-    # 🔍 sanity check
     print("Model running on:", next(model.parameters()).device)
 
     opt = AdamW(model.parameters(), lr=cfg.lr)
 
-    # ❌ DISABLED (causing stagnation)
+    # ❌ DISABLED
     # sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
 
-    tex_weights = get_class_weights(device)   # (kept but unused)
+    tex_weights = get_class_weights(device)
 
     best = float("inf")
     best_state = None
@@ -145,30 +159,26 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
         epoch_start = time.time()
 
-        train_out = run_epoch(model, train_loader, opt, device, True, cfg, tex_weights)
-        val_out = run_epoch(model, val_loader, opt, device, False, cfg, tex_weights)
+        print(f"\n\n===== Epoch {epoch+1}/{cfg.epochs} =====")
 
-        # ==========================================
-        # 🔍 DEBUG PREDICTIONS
-        # ==========================================
+        train_out = run_epoch(model, train_loader, opt, device, True, cfg, tex_weights)
+        print()  # newline after progress bar
+
+        val_out = run_epoch(model, val_loader, opt, device, False, cfg, tex_weights)
+        print()
+
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
 
-        print("Pred classes:", torch.unique(val_pred))  # debug
+        print("Pred classes:", torch.unique(val_pred))
 
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
 
-        # ❌ DISABLED
-        # sched.step(val_out["loss"])
-
-        # ==========================================
-        # 🔥 OPTIONAL GPU MEMORY MONITOR
-        # ==========================================
+        # GPU memory monitor
         if torch.cuda.is_available():
             print("GPU mem (GB):", round(torch.cuda.memory_allocated() / 1e9, 3))
 
         epoch_time = time.time() - epoch_start
 
-        # early stopping
         if val_out["loss"] < best:
             best = val_out["loss"]
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
