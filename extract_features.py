@@ -2,7 +2,6 @@ import os
 import numpy as np
 from pathlib import Path
 from preprocessing import preprocess_audio, PreprocessConfig
-!pip install tqdm
 
 # ----------------------------
 # DATASET PATHS (EDIT THESE)
