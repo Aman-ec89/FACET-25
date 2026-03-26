@@ -65,14 +65,8 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
     losses = []
     tex_logits_all, tex_y_all = [], []
 
-    # ==========================================
-    # ✅ TOTAL BATCHES (for progress)
-    # ==========================================
     total_batches = len(loader)
 
-    # ==========================================
-    # 🔄 LOOP WITH INDEX
-    # ==========================================
     for i, batch in enumerate(loader):
 
         x = batch["x"].to(device, non_blocking=True)
@@ -95,19 +89,13 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
                 loss.backward()
 
                 # ==========================================
-                # 🔥 GRADIENT DEBUG (LIMITED PRINT)
+                # ❌ GRAD DEBUG DISABLED (was noisy)
                 # ==========================================
-                total_norm = 0.0
-                for p in model.parameters():
-                    if p.grad is not None:
-                        total_norm += p.grad.norm().item()
-
-                # ⚠️ OLD (too noisy)
+                # total_norm = 0.0
+                # for p in model.parameters():
+                #     if p.grad is not None:
+                #         total_norm += p.grad.norm().item()
                 # print("Grad norm:", round(total_norm, 4))
-
-                # ✅ NEW (controlled logging)
-                if i % 50 == 0:
-                    print(f"\n[Batch {i}/{total_batches}] Grad norm:", round(total_norm, 4))
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
                 optimizer.step()
@@ -118,10 +106,10 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
         tex_y_all.append(tex_y.detach().cpu())
 
         # ==========================================
-        # ✅ PROGRESS BAR
+        # ✅ PROGRESS %
         # ==========================================
         progress = (i + 1) / total_batches * 100
-        print(f"\rProgress: {progress:.1f}%", end="")
+        print(f"\rProgress: {progress:5.1f}%", end="", flush=True)
 
     return {
         "loss": float(np.mean(losses)) if losses else 0.0,
@@ -137,12 +125,10 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
 # ==========================================
 def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
-    # ==========================================
-    # 🔥 FORCE MODEL TO GPU (CRITICAL FIX)
-    # ==========================================
     model = model.to(device)
 
-    print("Model running on:", next(model.parameters()).device)
+    # ❌ NOT NEEDED FOR FINAL OUTPUT
+    # print("Model running on:", next(model.parameters()).device)
 
     opt = AdamW(model.parameters(), lr=cfg.lr)
 
@@ -159,23 +145,25 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
         epoch_start = time.time()
 
-        print(f"\n\n===== Epoch {epoch+1}/{cfg.epochs} =====")
+        # ❌ REMOVE EXTRA HEADERS
+        # print(f"\n\n===== Epoch {epoch+1}/{cfg.epochs} =====")
 
         train_out = run_epoch(model, train_loader, opt, device, True, cfg, tex_weights)
-        print()  # newline after progress bar
+        print()  # newline after progress
 
         val_out = run_epoch(model, val_loader, opt, device, False, cfg, tex_weights)
         print()
 
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
 
-        print("Pred classes:", torch.unique(val_pred))
+        # ❌ DEBUG REMOVED
+        # print("Pred classes:", torch.unique(val_pred))
 
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
 
-        # GPU memory monitor
-        if torch.cuda.is_available():
-            print("GPU mem (GB):", round(torch.cuda.memory_allocated() / 1e9, 3))
+        # ❌ GPU DEBUG REMOVED
+        # if torch.cuda.is_available():
+        #     print("GPU mem (GB):", round(torch.cuda.memory_allocated() / 1e9, 3))
 
         epoch_time = time.time() - epoch_start
 
@@ -186,6 +174,7 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
         else:
             stale += 1
 
+        # ✅ FINAL OUTPUT (ONLY THIS WILL SHOW)
         print(
             f"Epoch {epoch+1:03d} | "
             f"train_loss={train_out['loss']:.4f} | "
