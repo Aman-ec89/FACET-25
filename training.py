@@ -9,7 +9,7 @@ import torch
 import time
 from torch import nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+# from torch.optim.lr_scheduler import ReduceLROnPlateau   # ❌ disabled
 
 
 # ==========================================
@@ -17,34 +17,35 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # ==========================================
 @dataclass
 class TrainConfig:
-    lr: float = 1e-4   # 🔥 increased for better learning
+    lr: float = 1e-3   # 🔥 FIXED (was 1e-4)
     batch_size: int = 64
     epochs: int = 10
     patience: int = 5
     grad_clip: float = 5.0
-    alpha_det: float = 0.0   # ❌ detection disabled
-    alpha_tex: float = 1.0   # ✅ full focus on texture
+    alpha_det: float = 0.0
+    alpha_tex: float = 1.0
 
 
 # ==========================================
-# CLASS WEIGHTS (CORRECTED)
+# CLASS WEIGHTS (DISABLED)
 # ==========================================
 def get_class_weights(device):
-    # Order: [fibrous, crunchy, soft, brittle]
+    # ❌ NOT USED ANYMORE (balanced dataset)
     class_counts = torch.tensor([449, 610, 361, 240], dtype=torch.float32)
-
-    # ✅ proper inverse-frequency weighting
     weights = class_counts.sum() / class_counts
-
     return weights.to(device)
 
 
 # ==========================================
-# LOSS FUNCTION (TEXTURE ONLY)
+# LOSS FUNCTION (FIXED)
 # ==========================================
 def multitask_loss(outputs, det_y, tex_y, tex_weight=None):
 
-    tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
+    # ❌ OLD (hurting learning)
+    # tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
+
+    # ✅ NEW (correct)
+    tex_ce = nn.CrossEntropyLoss()
 
     tex = tex_ce(outputs["tex_logits"], tex_y)
 
@@ -62,7 +63,6 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
     model.train(train)
 
     losses = []
-    det_logits_all, det_y_all = [], []
     tex_logits_all, tex_y_all = [], []
 
     for batch in loader:
@@ -85,21 +85,27 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
             if train:
                 optimizer.zero_grad()
                 loss.backward()
+
+                # ==========================================
+                # 🔥 GRADIENT DEBUG (CRITICAL)
+                # ==========================================
+                total_norm = 0.0
+                for p in model.parameters():
+                    if p.grad is not None:
+                        total_norm += p.grad.norm().item()
+                print("Grad norm:", round(total_norm, 4))
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
                 optimizer.step()
 
         losses.append(loss.item())
 
-        # det_logits_all.append(out["det_logits"].detach().cpu())
         tex_logits_all.append(out["tex_logits"].detach().cpu())
-        # det_y_all.append(det_y.detach().cpu())
         tex_y_all.append(tex_y.detach().cpu())
 
     return {
         "loss": float(np.mean(losses)) if losses else 0.0,
-        # "det_logits": torch.cat([x.reshape(-1, x.shape[-1]) for x in det_logits_all], 0),
         "det_logits": None,
-        # "det_y": torch.cat([x.reshape(-1) for x in det_y_all], 0),
         "det_y": None,
         "tex_logits": torch.cat(tex_logits_all, 0),
         "tex_y": torch.cat(tex_y_all, 0),
@@ -112,9 +118,11 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
 def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
     opt = AdamW(model.parameters(), lr=cfg.lr)
-    sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
 
-    tex_weights = get_class_weights(device)
+    # ❌ DISABLED (causing stagnation)
+    # sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
+
+    tex_weights = get_class_weights(device)   # (kept but unused)
 
     best = float("inf")
     best_state = None
@@ -129,10 +137,13 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
         # texture accuracy
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
-        print("Pred classes:", torch.unique(val_pred))
+
+        print("Pred classes:", torch.unique(val_pred))  # debug
+
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
 
-        sched.step(val_out["loss"])
+        # ❌ DISABLED
+        # sched.step(val_out["loss"])
 
         epoch_time = time.time() - epoch_start
 
