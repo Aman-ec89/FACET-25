@@ -17,17 +17,26 @@ cfg = PreprocessConfig()
 # 🔧 FIXED TIME LENGTH
 FIXED_T = 200
 
+
 def process_folder(audio_dir, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
 
     files = sorted(Path(audio_dir).glob("*.wav"))
 
+    total_files = len(files)
+
     print("\nProcessing:", audio_dir)
-    print("Total files:", len(files))
+    print("Total files:", total_files)
+
+    # ==========================================
+    # 🔥 PROGRESS INIT
+    # ==========================================
+    if total_files == 0:
+        print("⚠️ No files found")
+        return
 
     for i, f in enumerate(files):
-    # for i, f in enumerate(tqdm(files, desc="Extracting features", unit="file")):
 
         try:
             feats, _ = preprocess_audio(str(f), cfg)
@@ -39,10 +48,10 @@ def process_folder(audio_dir, out_dir):
 
                 # 🔧 FIX TIME DIMENSION (MAIN FIX)
                 if x.shape[1] > FIXED_T:
-                    x = x[:, :FIXED_T]   # truncate
+                    x = x[:, :FIXED_T]
                 else:
                     pad = FIXED_T - x.shape[1]
-                    x = np.pad(x, ((0, 0), (0, pad)))  # pad
+                    x = np.pad(x, ((0, 0), (0, pad)))
 
                 processed.append(x)
 
@@ -51,11 +60,16 @@ def process_folder(audio_dir, out_dir):
 
             np.save(os.path.join(out_dir, f.stem + ".npy"), x)
 
-            if i % 100 == 0:
-                print(i, "/", len(files))
-
         except Exception as e:
             print("ERROR:", f.name, e)
+
+        # ==========================================
+        # 🔥 PROGRESS DISPLAY (REAL %)
+        # ==========================================
+        progress = (i + 1) / total_files * 100
+        print(f"\rProgress: {progress:6.2f}% ({i+1}/{total_files})", end="", flush=True)
+
+    print()  # newline after loop
 
 
 # ----------------------------
