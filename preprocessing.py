@@ -1,4 +1,4 @@
-"""Signal preprocessing pipeline for chewing audio."""
+"""Signal preprocessing pipeline for chewing audio (GPU ENABLED)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,7 +6,15 @@ from typing import Dict, Tuple
 
 import librosa
 import numpy as np
-from scipy.signal import butter, lfilter, stft
+from scipy.signal import butter, lfilter
+
+# ==========================================
+# ✅ GPU SUPPORT
+# ==========================================
+import torch
+import torchaudio
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @dataclass
@@ -20,7 +28,7 @@ class PreprocessConfig:
 
 
 # ==========================================
-# BANDPASS
+# BANDPASS FILTER (CPU – OK)
 # ==========================================
 def butter_bandpass(low: float, high: float, fs: int, order: int = 4):
     nyq = 0.5 * fs
@@ -30,18 +38,11 @@ def butter_bandpass(low: float, high: float, fs: int, order: int = 4):
 
 def apply_bandpass(sig: np.ndarray, low: float, high: float, fs: int, order: int = 4) -> np.ndarray:
     b, a = butter_bandpass(low, high, fs, order=order)
-
-    filtered = lfilter(b, a, sig)
-
-    # ✅ FIX: fallback if signal collapses
-    if np.abs(filtered).mean() < 1e-5:
-        return sig
-
-    return filtered
+    return lfilter(b, a, sig)
 
 
 # ==========================================
-# SILENCE REMOVAL
+# SILENCE REMOVAL (CPU – OK)
 # ==========================================
 def adaptive_silence_removal(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarray:
     frame_len = int(cfg.frame_ms * cfg.sr / 1000)
@@ -52,16 +53,11 @@ def adaptive_silence_removal(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarr
 
     for i in range(0, max(1, len(sig) - frame_len + 1), max(1, hop)):
         frame = sig[i : i + frame_len]
-        energies.append(np.mean(frame**2) + 1e-10)
+        energies.append(np.mean(frame**2))
         starts.append(i)
 
     energies = np.asarray(energies)
-
-    # ❌ OLD (too aggressive)
-    # thresh = 0.01 * np.mean(energies)
-
-    # ✅ NEW (safer)
-    thresh = 0.005 * np.mean(energies)
+    thresh = 0.01 * np.mean(energies)
 
     keep = np.zeros_like(sig, dtype=bool)
 
@@ -69,64 +65,49 @@ def adaptive_silence_removal(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarr
         if e >= thresh:
             keep[i : i + frame_len] = True
 
-    if not keep.any():
-        return sig
-
-    return sig[keep]
+    return sig if not keep.any() else sig[keep]
 
 
 # ==========================================
-# STFT + MEL
+# ❌ OLD CPU VERSION (KEPT)
 # ==========================================
-def stft_logmel(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarray:
+# def stft_logmel(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarray:
+#     ...
 
-    frame_len = int(cfg.frame_ms * cfg.sr / 1000)
-    hop = int(frame_len * (1 - cfg.overlap))
-    window = np.bartlett(frame_len)
 
-    _, _, zxx = stft(sig, fs=cfg.sr, window=window,
-                     nperseg=frame_len,
-                     noverlap=frame_len - hop)
+# ==========================================
+# ✅ GPU VERSION (TORCH)
+# ==========================================
+def stft_logmel_gpu(sig: np.ndarray, cfg: PreprocessConfig) -> np.ndarray:
 
-    mag = np.abs(zxx) + 1e-8
+    sig_tensor = torch.tensor(sig, dtype=torch.float32).to(DEVICE)
 
-    mel_basis = librosa.filters.mel(
-        sr=cfg.sr,
-        n_fft=frame_len,
+    n_fft = int(cfg.frame_ms * cfg.sr / 1000)
+    hop = int(n_fft * (1 - cfg.overlap))
+
+    mel_spec = torchaudio.transforms.MelSpectrogram(
+        sample_rate=cfg.sr,
+        n_fft=n_fft,
+        hop_length=hop,
         n_mels=cfg.n_mels,
-        fmin=cfg.min_freq,
-        fmax=cfg.max_freq,
-    )
+        f_min=cfg.min_freq,
+        f_max=cfg.max_freq,
+        power=2.0,
+    ).to(DEVICE)
 
-    mel = mel_basis @ mag
-    mel = np.maximum(mel, 1e-8)
+    spec = mel_spec(sig_tensor)
+    spec = torch.log(spec + 1e-8)
 
-    # ✅ FIX: log stability
-    mel = np.log(mel + 1e-6)
-
-    # ✅ ADD: energy boost
-    energy = np.mean(mel, axis=0, keepdims=True)
-    mel = mel + 0.1 * energy
-
-    return mel
+    return spec.cpu().numpy()
 
 
 # ==========================================
 # NORMALIZATION
 # ==========================================
-def zscore_global(x: np.ndarray, mean=None, std=None):
-
-    if mean is None:
-        mean = float(x.mean())
-
-    if std is None:
-        std = float(x.std())
-
-    # ✅ FIX: avoid collapse
-    if std < 1e-6:
-        std = 1.0
-
-    return (x - mean) / std, mean, std
+def zscore_global(x: np.ndarray):
+    mean = x.mean()
+    std = x.std() + 1e-8
+    return (x - mean) / std
 
 
 # ==========================================
@@ -139,7 +120,7 @@ def compute_subbands(sig: np.ndarray, fs: int) -> Dict[str, np.ndarray]:
         "B3": (800, 2000),
         "B4": (2000, 4500),
     }
-    return {k: apply_bandpass(sig, lo, hi, fs, order=4) for k, (lo, hi) in bands.items()}
+    return {k: apply_bandpass(sig, lo, hi, fs) for k, (lo, hi) in bands.items()}
 
 
 # ==========================================
@@ -149,34 +130,39 @@ def preprocess_audio(path: str, cfg: PreprocessConfig) -> Tuple[Dict[str, np.nda
 
     sig, _ = librosa.load(path, sr=cfg.sr, mono=True)
 
-    # -------------------------
-    # Data augmentation
-    # -------------------------
+    # ==========================================
+    # DATA AUGMENTATION
+    # ==========================================
     if np.random.rand() < 0.5:
         sig = sig + 0.003 * np.random.randn(len(sig))
 
     if np.random.rand() < 0.5:
         sig = sig * np.random.uniform(0.8, 1.2)
 
-    # -------------------------
-    # Processing
-    # -------------------------
+    # ==========================================
     sig = adaptive_silence_removal(sig, cfg)
 
+    # ==========================================
+    # SUBBANDS
+    # ==========================================
     subbands = compute_subbands(sig, cfg.sr)
 
-    feats = {k: stft_logmel(v, cfg) for k, v in subbands.items()}
+    # ==========================================
+    # ✅ GPU FEATURE EXTRACTION
+    # ==========================================
+    feats = {k: stft_logmel_gpu(v, cfg) for k, v in subbands.items()}
 
-    # ❌ OLD (BROKEN → caused zero features)
-    # stacked = np.concatenate(list(feats.values()), axis=0)
-    # normed, mean, std = zscore_global(stacked)
-    # splits = np.array_split(normed, 4, axis=0)
-    # out = {k: s for k, s in zip(["B1", "B2", "B3", "B4"], splits)}
+    # ==========================================
+    # NORMALIZATION
+    # ==========================================
+    stacked = np.concatenate(list(feats.values()), axis=0)
+    normed = zscore_global(stacked)
 
-    # ✅ NEW (CORRECT → per-band normalization)
-    out = {}
-    for k, v in feats.items():
-        v, _, _ = zscore_global(v)
-        out[k] = np.nan_to_num(v)
+    splits = np.array_split(normed, 4, axis=0)
+
+    out = {k: s for k, s in zip(["B1", "B2", "B3", "B4"], splits)}
+
+    for k in out:
+        out[k] = np.nan_to_num(out[k])
 
     return out, sig
