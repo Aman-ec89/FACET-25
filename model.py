@@ -53,8 +53,8 @@ class TemporalTCN(nn.Module):
 
 @dataclass
 class ModelConfig:
-    dropout: float = 0.3
-    hidden: int = 128
+    dropout: float = 0.5
+    hidden: int = 256
     use_attention: bool = True
     use_subbands: bool = True
     temporal: str = "bilstm"  # or tcn
