@@ -17,11 +17,11 @@ from torch.optim import AdamW
 # ==========================================
 @dataclass
 class TrainConfig:
-    lr: float = 1e-3   # 🔥 FIXED (was 1e-4)
-    batch_size: int = 64
-    epochs: int = 10
-    patience: int = 5
-    grad_clip: float = 5.0
+    lr: float = 3e-4   # 🔥 FIXED (was 1e-4, 1e-3)
+    batch_size: int = 128
+    epochs: int = 30
+    patience: int = 10
+    grad_clip: float = 1.5
     alpha_det: float = 0.0
     alpha_tex: float = 1.0
 
@@ -45,7 +45,7 @@ def multitask_loss(outputs, det_y, tex_y, tex_weight=None):
     # tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
 
     # ✅ NEW (correct)
-    tex_ce = nn.CrossEntropyLoss()
+    tex_ce = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     tex = tex_ce(outputs["tex_logits"], tex_y)
 
@@ -130,7 +130,7 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     # ❌ NOT NEEDED FOR FINAL OUTPUT
     # print("Model running on:", next(model.parameters()).device)
 
-    opt = AdamW(model.parameters(), lr=cfg.lr)
+    opt = AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
 
     # ❌ DISABLED
     # sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
