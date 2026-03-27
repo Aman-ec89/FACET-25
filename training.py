@@ -41,10 +41,10 @@ def get_class_weights(device):
 # ==========================================
 def multitask_loss(outputs, det_y, tex_y, tex_weight=None):
 
-    # ❌ OLD (hurting learning)
+    # ❌ OLD
     # tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
 
-    # ✅ NEW (correct)
+    # ✅ NEW
     tex_ce = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     tex = tex_ce(outputs["tex_logits"], tex_y)
@@ -88,9 +88,7 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
                 optimizer.zero_grad()
                 loss.backward()
 
-                # ==========================================
-                # ❌ GRAD DEBUG DISABLED (was noisy)
-                # ==========================================
+                # ❌ OLD GRAD DEBUG (NOISY)
                 # total_norm = 0.0
                 # for p in model.parameters():
                 #     if p.grad is not None:
@@ -127,10 +125,10 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
     model = model.to(device)
 
-    # ❌ NOT NEEDED FOR FINAL OUTPUT
+    # ❌ DEBUG NOT REQUIRED
     # print("Model running on:", next(model.parameters()).device)
 
-    opt = AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
+    opt = AdamW(model.parameters(), lr=cfg.lr, weight_decay=1e-4)
 
     # ❌ DISABLED
     # sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
@@ -145,25 +143,15 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
         epoch_start = time.time()
 
-        # ❌ REMOVE EXTRA HEADERS
-        # print(f"\n\n===== Epoch {epoch+1}/{cfg.epochs} =====")
-
         train_out = run_epoch(model, train_loader, opt, device, True, cfg, tex_weights)
-        print()  # newline after progress
+        print()
 
         val_out = run_epoch(model, val_loader, opt, device, False, cfg, tex_weights)
         print()
 
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
 
-        # ❌ DEBUG REMOVED
-        # print("Pred classes:", torch.unique(val_pred))
-
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
-
-        # ❌ GPU DEBUG REMOVED
-        # if torch.cuda.is_available():
-        #     print("GPU mem (GB):", round(torch.cuda.memory_allocated() / 1e9, 3))
 
         epoch_time = time.time() - epoch_start
 
@@ -174,7 +162,7 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
         else:
             stale += 1
 
-        # ✅ FINAL OUTPUT (ONLY THIS WILL SHOW)
+        # ✅ FINAL CLEAN OUTPUT
         print(
             f"Epoch {epoch+1:03d} | "
             f"train_loss={train_out['loss']:.4f} | "
