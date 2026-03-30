@@ -1,4 +1,4 @@
-"""Training and validation loops for multi-task learning."""
+"""Training and validation loops for multi-task learning (WITH HISTORY TRACKING)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ from torch.optim import AdamW
 # ==========================================
 @dataclass
 class TrainConfig:
-    lr: float = 3e-4   # 🔥 FIXED (was 1e-4, 1e-3)
+    lr: float = 3e-4
     batch_size: int = 128
     epochs: int = 30
     patience: int = 10
@@ -37,14 +37,14 @@ def get_class_weights(device):
 
 
 # ==========================================
-# LOSS FUNCTION (FIXED)
+# LOSS FUNCTION
 # ==========================================
 def multitask_loss(outputs, det_y, tex_y, tex_weight=None):
 
     # ❌ OLD
     # tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
 
-    # ✅ NEW
+    # ✅ CURRENT (GOOD)
     tex_ce = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     tex = tex_ce(outputs["tex_logits"], tex_y)
@@ -88,12 +88,9 @@ def run_epoch(model, loader, optimizer, device, train: bool, cfg: TrainConfig, t
                 optimizer.zero_grad()
                 loss.backward()
 
-                # ❌ OLD GRAD DEBUG (NOISY)
-                # total_norm = 0.0
-                # for p in model.parameters():
-                #     if p.grad is not None:
-                #         total_norm += p.grad.norm().item()
-                # print("Grad norm:", round(total_norm, 4))
+                # ❌ OLD DEBUG
+                # total_norm = ...
+                # print(...)
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
                 optimizer.step()
@@ -125,19 +122,25 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
 
     model = model.to(device)
 
-    # ❌ DEBUG NOT REQUIRED
-    # print("Model running on:", next(model.parameters()).device)
-
     opt = AdamW(model.parameters(), lr=cfg.lr, weight_decay=1e-4)
 
-    # ❌ DISABLED
-    # sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
+    # ❌ scheduler disabled (kept for reference)
+    # sched = ReduceLROnPlateau(...)
 
     tex_weights = get_class_weights(device)
 
     best = float("inf")
     best_state = None
     stale = 0
+
+    # ==========================================
+    # 🔥 NEW: HISTORY TRACKING
+    # ==========================================
+    history = {
+        "train_loss": [],
+        "val_loss": [],
+        "val_acc": []
+    }
 
     for epoch in range(cfg.epochs):
 
@@ -150,10 +153,16 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
         print()
 
         val_pred = torch.argmax(val_out["tex_logits"], dim=1)
-
         val_acc = (val_pred == val_out["tex_y"]).float().mean().item()
 
         epoch_time = time.time() - epoch_start
+
+        # ==========================================
+        # 🔥 STORE HISTORY
+        # ==========================================
+        history["train_loss"].append(train_out["loss"])
+        history["val_loss"].append(val_out["loss"])
+        history["val_acc"].append(val_acc)
 
         if val_out["loss"] < best:
             best = val_out["loss"]
@@ -162,7 +171,9 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
         else:
             stale += 1
 
-        # ✅ FINAL CLEAN OUTPUT
+        # ==========================================
+        # ✅ CLEAN OUTPUT (UNCHANGED)
+        # ==========================================
         print(
             f"Epoch {epoch+1:03d} | "
             f"train_loss={train_out['loss']:.4f} | "
@@ -178,4 +189,7 @@ def train_model(model, train_loader, val_loader, device, cfg: TrainConfig):
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    return model
+    # ==========================================
+    # 🔥 RETURN HISTORY ALSO
+    # ==========================================
+    return model, history
