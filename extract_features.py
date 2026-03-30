@@ -75,7 +75,7 @@ if os.path.exists(OUT_DIR):
 os.makedirs(OUT_DIR, exist_ok=True)
 
 process_folder(RECORDED_DIR, os.path.join(OUT_DIR, "recorded"))
-process_folder(KAGGLE_DIR, os.path.join(OUT_DIR, "kaggle"))
+# process_folder(KAGGLE_DIR, os.path.join(OUT_DIR, "kaggle"))
 
 print("\nFeature extraction complete.")
 
