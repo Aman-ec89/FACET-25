@@ -68,10 +68,10 @@ class FrequencyAwareMultiTaskNet(nn.Module):
         self.cfg = cfg
         self.band_modules = nn.ModuleDict(
             {
-                "B1": ConvStack(1, 16, 2, (7, 3), cfg.dropout),
-                "B2": ConvStack(1, 24, 3, (5, 3), cfg.dropout),
-                "B3": ConvStack(1, 32, 4, (3, 3), cfg.dropout),
-                "B4": ConvStack(1, 32, 4, (3, 1), cfg.dropout),
+                "B1": ConvStack(5, 16, 2, (7, 3), cfg.dropout),
+                "B2": ConvStack(5, 24, 3, (5, 3), cfg.dropout),
+                "B3": ConvStack(5, 32, 4, (3, 3), cfg.dropout),
+                "B4": ConvStack(5, 32, 4, (3, 1), cfg.dropout),
             }
         )
         feat_dim = 16 + 24 + 32 + 32
