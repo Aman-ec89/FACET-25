@@ -35,14 +35,30 @@ def safe_merge(outputs):
 # ATTENTION PLOT
 # =========================================================
 def plot_attention(attn, save_path):
-    plt.figure()
-    plt.imshow(attn, aspect='auto')
-    plt.colorbar()
+    attn = np.array(attn)
+    # 🔥 FIX SHAPE
+    if attn.ndim == 1:
+        attn = attn.reshape(1, -1)
+    plt.figure(figsize=(10, 3))
+    plt.imshow(attn, aspect='auto', cmap='viridis')
     plt.title("Attention Map")
-    plt.xlabel("Time")
-    plt.ylabel("Weight")
+    plt.colorbar()
+
+    plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
+
+
+# def plot_attention(attn, save_path):
+#     plt.figure()
+#     plt.imshow(attn, aspect='auto')
+#     plt.colorbar()
+#     plt.title("Attention Map")
+#     plt.xlabel("Time")
+#     plt.ylabel("Weight")
+#     plt.savefig(save_path)
+#     plt.close()
+
 
 
 # =========================================================
