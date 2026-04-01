@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from dataloader import make_loader
+from data_loader import make_loader
 from model import FrequencyAwareMultiTaskNet, ModelConfig
 from training import TrainConfig, train_model
 
