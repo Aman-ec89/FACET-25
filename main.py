@@ -46,7 +46,7 @@ def run(args):
     model = FrequencyAwareMultiTaskNet(ModelConfig()).to(device)
 
     cfg = TrainConfig()
-
+    cfg.epochs = args.epochs
     model, history = train_model(model, train_loader, val_loader, device, cfg)
 
     # ==========================================
@@ -70,5 +70,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--recorded_dir", required=True)
     ap.add_argument("--batch_size", type=int, default=64)
+
+    # 🔥 ADD THIS LINE
+    ap.add_argument("--epochs", type=int, default=50)
 
     run(ap.parse_args())
