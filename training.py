@@ -1,4 +1,4 @@
-"""Training and validation loops for multi-task learning (IMPROVED)."""
+"""Training and validation loops for multi-task learning (FINAL + METRICS)."""
 
 from dataclasses import dataclass
 import numpy as np
@@ -6,7 +6,9 @@ import torch
 import time
 from torch import nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import ReduceLROnPlateau   # ✅ ENABLED
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+from sklearn.metrics import confusion_matrix, classification_report
 
 
 # ==========================================
@@ -15,30 +17,25 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau   # ✅ ENABLED
 @dataclass
 class TrainConfig:
     lr: float = 1e-4
-    batch_size: int = 64   # 🔥 reduced (better generalization)
-    epochs: int = 50       # 🔥 allow convergence
+    batch_size: int = 64
+    epochs: int = 50
     patience: int = 10
     grad_clip: float = 1.5
 
 
 # ==========================================
-# LOSS FUNCTION
+# LOSS
 # ==========================================
 def multitask_loss(outputs, det_y, tex_y, tex_weight=None):
 
-    # ❌ OLD
-    # tex_ce = nn.CrossEntropyLoss(weight=tex_weight)
-
-    # 🔥 REDUCED SMOOTHING
     tex_ce = nn.CrossEntropyLoss(label_smoothing=0.05)
-
     tex = tex_ce(outputs["tex_logits"], tex_y)
 
     return tex, {"tex_loss": float(tex.item())}
 
 
 # ==========================================
-# EPOCH RUNNER
+# EPOCH
 # ==========================================
 def run_epoch(model, loader, optimizer, device, train, cfg):
 
@@ -70,10 +67,13 @@ def run_epoch(model, loader, optimizer, device, train, cfg):
 
         print(f"\rProgress: {(i+1)/len(loader)*100:5.1f}%", end="")
 
+    tex_logits_all = torch.cat(tex_logits_all)
+    tex_y_all = torch.cat(tex_y_all)
+
     return {
         "loss": np.mean(losses),
-        "tex_logits": torch.cat(tex_logits_all),
-        "tex_y": torch.cat(tex_y_all),
+        "tex_logits": tex_logits_all,
+        "tex_y": tex_y_all,
     }
 
 
@@ -85,8 +85,6 @@ def train_model(model, train_loader, val_loader, device, cfg):
     model = model.to(device)
 
     opt = AdamW(model.parameters(), lr=cfg.lr, weight_decay=1e-3)
-
-    # ✅ ENABLE SCHEDULER
     sched = ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=2)
 
     best = float("inf")
@@ -94,6 +92,9 @@ def train_model(model, train_loader, val_loader, device, cfg):
     stale = 0
 
     history = {"train_loss": [], "val_loss": [], "val_acc": []}
+
+    final_cm = None
+    final_report = None
 
     for epoch in range(cfg.epochs):
 
@@ -104,10 +105,23 @@ def train_model(model, train_loader, val_loader, device, cfg):
         val_out = run_epoch(model, val_loader, opt, device, False, cfg)
         print()
 
-        pred = val_out["tex_logits"].argmax(1)
-        acc = (pred == val_out["tex_y"]).float().mean().item()
+        pred = val_out["tex_logits"].argmax(1).numpy()
+        true = val_out["tex_y"].numpy()
 
-        sched.step(val_out["loss"])   # 🔥 important
+        acc = (pred == true).mean()
+
+        # 🔥 CONFUSION MATRIX
+        cm = confusion_matrix(true, pred)
+
+        # 🔥 METRICS
+        report = classification_report(
+            true, pred, output_dict=True, zero_division=0
+        )
+
+        final_cm = cm
+        final_report = report
+
+        sched.step(val_out["loss"])
 
         history["train_loss"].append(train_out["loss"])
         history["val_loss"].append(val_out["loss"])
@@ -128,4 +142,4 @@ def train_model(model, train_loader, val_loader, device, cfg):
 
     model.load_state_dict(best_state)
 
-    return model, history
+    return model, history, final_cm, final_report
