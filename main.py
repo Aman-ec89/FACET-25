@@ -1,4 +1,4 @@
-"""FINAL MAIN (LOSO + ABLATION + CSV EXPORT)"""
+"""FINAL MAIN (LOSO + ABLATION + CSV + PLOTS)"""
 
 import argparse
 from pathlib import Path
@@ -23,9 +23,6 @@ def run(args):
     files = list(Path(args.recorded_dir).glob("*.npy"))
     print("Total samples:", len(files))
 
-    # ==========================================
-    # SUBJECT LIST (LOSO)
-    # ==========================================
     subjects = sorted(set([f.stem.split("_")[0] for f in files]))
 
     os.makedirs("outputs", exist_ok=True)
@@ -41,6 +38,10 @@ def run(args):
         results[mode] = []
 
         subject_records = []
+
+        # 📁 Create plot folder
+        plot_dir = f"outputs/{mode}/plots"
+        os.makedirs(plot_dir, exist_ok=True)
 
         for subject in subjects:
 
@@ -60,6 +61,9 @@ def run(args):
             if mode == "no_attention":
                 cfg_model.use_attention = False
 
+            if mode == "freq_attention":
+                cfg_model.use_freq_attention = True
+
             model = FrequencyAwareMultiTaskNet(cfg_model).to(device)
 
             # ==========================================
@@ -71,6 +75,25 @@ def run(args):
             model, history = train_model(
                 model, train_loader, val_loader, device, cfg_train
             )
+
+            # ==========================================
+            # 🔥 SAVE PLOTS
+            # ==========================================
+            # LOSS
+            plt.figure()
+            plt.plot(history["train_loss"], label="train")
+            plt.plot(history["val_loss"], label="val")
+            plt.legend()
+            plt.title(f"{mode} - {subject} Loss")
+            plt.savefig(f"{plot_dir}/{subject}_loss.png")
+            plt.close()
+
+            # ACCURACY
+            plt.figure()
+            plt.plot(history["val_acc"])
+            plt.title(f"{mode} - {subject} Accuracy")
+            plt.savefig(f"{plot_dir}/{subject}_acc.png")
+            plt.close()
 
             # ==========================================
             # BEST ACC
