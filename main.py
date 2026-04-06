@@ -72,7 +72,7 @@ def run(args):
             cfg_train = TrainConfig()
             cfg_train.epochs = args.epochs
 
-            model, history = train_model(
+            model, history, cm, report = train_model(
                 model, train_loader, val_loader, device, cfg_train
             )
 
