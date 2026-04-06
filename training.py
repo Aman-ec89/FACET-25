@@ -18,8 +18,8 @@ from sklearn.metrics import confusion_matrix, classification_report
 class TrainConfig:
     lr: float = 1e-4
     batch_size: int = 64
-    epochs: int = 50
-    patience: int = 10
+    epochs: int = 5
+    patience: int = 3
     grad_clip: float = 1.5
 
 
