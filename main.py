@@ -49,7 +49,13 @@ def run(args):
 
             train_files = [f for f in files if subject not in f.stem]
             val_files = [f for f in files if subject in f.stem]
-
+                        
+            counts = np.array([410, 660, 290, 490], dtype=np.float32)  # [soft, crunchy, brittle, fibrous]
+            
+            weights = counts.sum() / counts
+            weights = weights / weights.mean()
+            
+            class_weights = torch.tensor(weights, dtype=torch.float32).to(device)
             train_loader = make_loader(train_files, args.batch_size, True)
             val_loader = make_loader(val_files, args.batch_size, False)
 
