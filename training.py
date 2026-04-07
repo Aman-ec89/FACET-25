@@ -76,6 +76,10 @@ def run_epoch(model, loader, optimizer, device, train, cfg, class_weights):
         x = batch["x"].to(device)
         tex_y = batch["tex_y"].to(device)
 
+        # ---- DEBUG: check batch class distribution ----
+        if i == 0:   # print only first batch (avoid spam)
+            print("Batch class distribution:", torch.bincount(tex_y))
+        
         with torch.set_grad_enabled(train):
 
             out = model(x)
