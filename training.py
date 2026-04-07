@@ -34,7 +34,8 @@ def multitask_loss(outputs, det_y, tex_y, class_weights):
 
     # ---- Logit Adjustment (fix class bias) ----
     log_prior = torch.log(class_weights + 1e-8)
-    logits = logits + log_prior
+    # logits = logits + log_prior
+    
 
     # ---- ORIGINAL LOSS (kept for reference) ----
     # tex_ce = nn.CrossEntropyLoss(label_smoothing=0.05)
@@ -50,7 +51,9 @@ def multitask_loss(outputs, det_y, tex_y, class_weights):
         label_smoothing=0.05
     )
 
-    pt = torch.exp(-ce)
+    # pt = torch.exp(-ce)
+    probs = torch.softmax(logits, dim=1)
+    pt = probs.gather(1, tex_y.unsqueeze(1)).squeeze()
     focal = ((1 - pt) ** 2.0) * ce   # gamma = 2
 
     loss = focal.mean()
@@ -116,7 +119,9 @@ def train_model(model, train_loader, val_loader, device, cfg):
     # ---- CLASS WEIGHTS (GLOBAL, FIXED) ----
     counts = np.array([410, 660, 290, 490], dtype=np.float32)  # [soft, crunchy, brittle, fibrous]
 
-    weights = 1.0 / counts
+    # weights = 1.0 / counts
+    weights = counts.sum() / counts
+    weights = weights / weights.mean()
     weights = weights / weights.sum() * len(counts)
 
     class_weights = torch.tensor(weights, dtype=torch.float32).to(device)
