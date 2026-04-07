@@ -57,39 +57,47 @@ class ChewingDataset(Dataset):
 def make_loader(files, batch_size, shuffle, class_weights=None):
 
     ds = ChewingDataset(files)
+
+    # ---- TRAIN LOADER (WITH SAMPLER) ----
     if shuffle and class_weights is not None:
-    
+
         labels = []
         for f in files:
             name = Path(f).stem
-            if "soft" in name: labels.append(0)
-            elif "crunchy" in name: labels.append(1)
-            elif "brittle" in name: labels.append(2)
-            else: labels.append(3)
-    
+            if "soft" in name:
+                labels.append(0)
+            elif "crunchy" in name:
+                labels.append(1)
+            elif "brittle" in name:
+                labels.append(2)
+            else:
+                labels.append(3)
+
         labels = np.array(labels)
-    
+
         sample_weights = class_weights.cpu().numpy()[labels]
-    
+
         sampler = WeightedRandomSampler(
             sample_weights,
             num_samples=len(sample_weights),
             replacement=True
         )
 
-    return DataLoader(
-        ChewingDataset(files),
-        batch_size=batch_size,
-        sampler=sampler,
-        shuffle=False,
-        num_workers=2,
-        pin_memory=True
-    )
-    return DataLoader(
-        ds,
-        batch_size=batch_size,
-        sampler=sampler,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True
-    )
+        return DataLoader(
+            ds,
+            batch_size=batch_size,
+            sampler=sampler,
+            shuffle=False,   # MUST be False with sampler
+            num_workers=2,
+            pin_memory=True
+        )
+
+    # ---- VALIDATION LOADER (NO SAMPLER) ----
+    else:
+        return DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=2,
+            pin_memory=True
+        )
