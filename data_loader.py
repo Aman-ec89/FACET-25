@@ -75,7 +75,9 @@ def make_loader(files, batch_size, shuffle, class_weights=None):
 
         labels = np.array(labels)
 
-        sample_weights = class_weights.cpu().numpy()[labels]
+        # sample_weights = class_weights.cpu().numpy()[labels]
+        class_counts = np.bincount(labels)
+        sample_weights = 1.0 / class_counts[labels]
 
         sampler = WeightedRandomSampler(
             sample_weights,
