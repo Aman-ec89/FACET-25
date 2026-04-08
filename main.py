@@ -11,7 +11,8 @@ import os
 from data_loader import make_loader
 from model import FrequencyAwareMultiTaskNet, ModelConfig
 from training import TrainConfig, train_model
-
+import warnings
+warnings.filterwarnings("ignore")
 
 # ==========================================
 # SPLIT FUNCTIONS
