@@ -88,10 +88,10 @@ def make_loader(files, batch_size, shuffle, class_weights=None):
         return DataLoader(
             ds,
             batch_size=batch_size,
-            sampler=sampler,
+            sampler=None,#sampler,
             shuffle=False,   # MUST be False with sampler
-            num_workers=2,
-            pin_memory=True
+            num_workers=0,
+            pin_memory=torch.cuda.is_available()#True
         )
 
     # ---- VALIDATION LOADER (NO SAMPLER) ----
@@ -101,5 +101,5 @@ def make_loader(files, batch_size, shuffle, class_weights=None):
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=2,
-            pin_memory=True
+            pin_memory=torch.cuda.is_available()#True
         )
