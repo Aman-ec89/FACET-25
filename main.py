@@ -32,7 +32,7 @@ def run(args):
     # ==========================================
     # ABLATION MODES
     # ==========================================
-    for mode in ["baseline"]:#, "no_attention", "freq_attention"]:
+    for mode in ["baseline", "no_attention", "freq_attention"]:
 
         print(f"\n📂 Running mode: {mode}")
         results[mode] = []
