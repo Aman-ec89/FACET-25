@@ -90,7 +90,7 @@ def make_loader(files, batch_size, shuffle, class_weights=None):
             batch_size=batch_size,
             sampler=sampler,
             shuffle=False,   # MUST be False with sampler
-            num_workers=8,
+            num_workers=2,
             pin_memory=True
         )
 
@@ -100,6 +100,6 @@ def make_loader(files, batch_size, shuffle, class_weights=None):
             ds,
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=8,
+            num_workers=2,
             pin_memory=True
         )
