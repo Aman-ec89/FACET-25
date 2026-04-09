@@ -12,6 +12,12 @@ from data_loader import make_loader
 from model import FrequencyAwareMultiTaskNet, ModelConfig
 from training import TrainConfig, train_model
 
+import warnings
+warnings.filterwarnings("ignore")
+import os
+os.environ["PYTHONWARNINGS"] = "ignore"
+import logging
+logging.getLogger().setLevel(logging.ERROR)
 
 # ==========================================
 # MAIN
