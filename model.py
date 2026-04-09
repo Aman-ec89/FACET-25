@@ -9,7 +9,7 @@ import pandas as pd
 import os
 
 from data_loader import make_loader
-# from model import FrequencyAwareMultiTaskNet, ModelConfig
+from model import FrequencyAwareMultiTaskNet, ModelConfig
 from training import TrainConfig, train_model
 
 
