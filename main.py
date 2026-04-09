@@ -28,7 +28,10 @@ def run(args):
 
     files = list(Path(args.recorded_dir).glob("*.npy"))
     print("Total samples:", len(files))
-
+    # 🔥 FIXED DATA ORDER (RESEARCH-GRADE)
+    np.random.seed(42)
+    files = sorted(files)        # ensure deterministic base order
+    np.random.shuffle(files)     # shuffle once only
     subjects = sorted(set([f.stem.split("_")[0] for f in files]))
 
     os.makedirs("outputs", exist_ok=True)
